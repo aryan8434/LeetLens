@@ -1,7 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 
-const REPORT_CACHE_KEY = "leetlensCoachReports";
+const REPORT_CACHE_KEY = "leetlensCoachReports_v2";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(
+  /\/$/,
+  "",
+);
+
+function toApiUrl(path) {
+  return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
+}
 
 function loadReportCache() {
   try {
@@ -92,6 +100,181 @@ function extractScore(scoreSection) {
   return score;
 }
 
+function getSectionTone(title) {
+  const normalized = normalizeSectionTitle(title);
+  if (normalized.includes("current insights")) {
+    return "insights";
+  }
+  if (normalized.includes("company readiness")) {
+    return "readiness";
+  }
+  if (normalized.includes("weakness")) {
+    return "weakness";
+  }
+  if (normalized.includes("improvement plan")) {
+    return "plan";
+  }
+  if (normalized.includes("verdict")) {
+    return "verdict";
+  }
+  return "default";
+}
+
+function renderLineWithHighlights(line) {
+  const tokens = line.split(
+    /(Hard|hard|Medium|medium|Easy|easy|FAANG|Product-based|Service-based|strong|Strong|weak|Weak|\d+(?:\.\d+)?%)/,
+  );
+
+  return tokens.map((token, index) => {
+    if (/^FAANG$/.test(token)) {
+      return (
+        <span
+          key={`${token}-${index}`}
+          className="token-faang-custom"
+          aria-label="FAANG"
+        >
+          <span className="faang-f">F</span>
+          <span className="faang-a1">A</span>
+          <span className="faang-a2">A</span>
+          <span className="faang-n">N</span>
+          <span className="faang-g">G</span>
+        </span>
+      );
+    }
+
+    let className = "token-default";
+    if (/^Hard$|^hard$/.test(token)) {
+      className = "token-hard";
+    } else if (/^Medium$|^medium$/.test(token)) {
+      className = "token-medium";
+    } else if (/^Easy$|^easy$/.test(token)) {
+      className = "token-easy";
+    } else if (/^Product-based$/.test(token)) {
+      className = "token-product";
+    } else if (/^Service-based$/.test(token)) {
+      className = "token-service";
+    } else if (/^strong$|^Strong$/.test(token)) {
+      className = "token-strong";
+    } else if (/^weak$|^Weak$/.test(token)) {
+      className = "token-weak";
+    } else if (/^\d+(?:\.\d+)?%$/.test(token)) {
+      className = "token-percent";
+    }
+
+    return (
+      <span key={`${token}-${index}`} className={className}>
+        {token}
+      </span>
+    );
+  });
+}
+
+function pairReadinessItems(items) {
+  const pairs = [];
+  for (let i = 0; i < items.length; i += 1) {
+    const current = items[i] || "";
+    const next = items[i + 1] || "";
+    if (next.toLowerCase().startsWith("reason:")) {
+      pairs.push({
+        heading: current,
+        details: next,
+      });
+      i += 1;
+    } else {
+      pairs.push({
+        heading: current,
+        details: "",
+      });
+    }
+  }
+  return pairs;
+}
+
+function parseReadinessHeading(headingLine) {
+  const match = headingLine.match(/^\s*([^:]+):\s*(\d{1,3})\s*\/\s*100\s*$/i);
+  if (!match) {
+    return {
+      label: headingLine.replace(/:\s*$/, ""),
+      score: null,
+    };
+  }
+
+  return {
+    label: match[1],
+    score: Number(match[2]),
+  };
+}
+
+function stripTrailingColon(text) {
+  return (text || "").replace(/:\s*$/, "");
+}
+
+function getAverageReadiness(items) {
+  const scores = items
+    .map((row) => parseReadinessHeading(row.heading).score)
+    .filter((score) => typeof score === "number" && !Number.isNaN(score));
+
+  if (!scores.length) {
+    return null;
+  }
+
+  return Math.round(
+    scores.reduce((sum, value) => sum + value, 0) / scores.length,
+  );
+}
+
+function pairHeadingDetailItems(items) {
+  const pairs = [];
+  for (let i = 0; i < items.length; i += 1) {
+    const current = items[i] || "";
+    const next = items[i + 1] || "";
+    if (current.endsWith(":") && next) {
+      pairs.push({
+        heading: current,
+        details: next,
+      });
+      i += 1;
+    } else {
+      pairs.push({
+        heading: current,
+        details: "",
+      });
+    }
+  }
+  return pairs;
+}
+
+const TOPIC_COLORS = [
+  "#22d3ee",
+  "#38bdf8",
+  "#60a5fa",
+  "#818cf8",
+  "#a78bfa",
+  "#34d399",
+  "#f59e0b",
+  "#f97316",
+];
+
+function getTopicColor(index) {
+  return TOPIC_COLORS[index % TOPIC_COLORS.length];
+}
+
+function getMonthTicks(heatmap) {
+  const ticks = [];
+  let lastMonth = "";
+
+  heatmap.forEach((item, index) => {
+    const date = new Date(`${item.date}T00:00:00`);
+    const month = date.toLocaleString("en-US", { month: "short" });
+    if (month !== lastMonth) {
+      ticks.push({ month, index });
+      lastMonth = month;
+    }
+  });
+
+  return ticks;
+}
+
 function getTopicBand(percentage) {
   if (percentage >= 40) {
     return "Strong";
@@ -120,6 +303,25 @@ function getHeatLevel(count, maxCount) {
   return 1;
 }
 
+async function readApiPayload(response) {
+  const raw = await response.text();
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch (_error) {
+    return { raw };
+  }
+}
+
+function buildHttpErrorMessage(response, payload, fallback) {
+  const main = payload?.error || fallback;
+  const details = payload?.details ? ` (${payload.details})` : "";
+  return `${main}${details} [HTTP ${response.status}]`;
+}
+
 function App() {
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
@@ -131,6 +333,33 @@ function App() {
   const [coachSavedAt, setCoachSavedAt] = useState("");
   const [showAllTopics, setShowAllTopics] = useState(false);
   const [showReportPage, setShowReportPage] = useState(false);
+
+  useEffect(() => {
+    const targets = document.querySelectorAll(".reveal-on-scroll");
+    if (!targets.length) {
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+          }
+        });
+      },
+      {
+        threshold: 0.08,
+        rootMargin: "0px 0px 14% 0px",
+      },
+    );
+
+    targets.forEach((node) => observer.observe(node));
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [analysis, showReportPage, coachReport]);
 
   const handleAnalyze = async (event) => {
     event.preventDefault();
@@ -147,12 +376,17 @@ function App() {
 
     try {
       const response = await fetch(
-        `/api/analyze?username=${encodeURIComponent(trimmed)}`,
+        toApiUrl(`/api/analyze?username=${encodeURIComponent(trimmed)}`),
       );
-      const data = await response.json();
+      const data = await readApiPayload(response);
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to analyze username.");
+        const message = buildHttpErrorMessage(
+          response,
+          data,
+          "Failed to analyze username.",
+        );
+        throw new Error(message);
       }
 
       setAnalysis(data);
@@ -206,7 +440,7 @@ function App() {
     setShowReportPage(true);
 
     try {
-      const response = await fetch("/api/coach", {
+      const response = await fetch(toApiUrl("/api/coach"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -214,9 +448,15 @@ function App() {
         body: JSON.stringify({ username: trimmed }),
       });
 
-      const data = await response.json();
+      const data = await readApiPayload(response);
       if (!response.ok) {
-        throw new Error(data.error || "Unable to generate AI report.");
+        throw new Error(
+          buildHttpErrorMessage(
+            response,
+            data,
+            "Unable to generate AI report.",
+          ),
+        );
       }
 
       setCoachReport(data.report || "");
@@ -272,6 +512,15 @@ function App() {
     (max, point) => Math.max(max, point.count),
     0,
   );
+  const monthTicks = getMonthTicks(heatmapData);
+  const ringProgress = analysis
+    ? (analysis.totals.solved / Math.max(analysis.totals.questions, 1)) * 100
+    : 0;
+  const topicGraphRows = analysis
+    ? showAllTopics
+      ? analysis.topics.slice(0, 20)
+      : analysis.topics.slice(0, 8)
+    : [];
 
   const reportSections = parseReportSections(coachReport);
   const scoreSection = findSection(reportSections, "overall skill score");
@@ -298,7 +547,7 @@ function App() {
         Track your problem solving progress and trends.
       </p>
 
-      <section className="card">
+      <section className="card analyze-card">
         <h2>Analyze LeetCode Profile</h2>
         <form className="analyze-form" onSubmit={handleAnalyze}>
           <input
@@ -316,52 +565,116 @@ function App() {
 
       {analysis ? (
         <>
-          <section className="card">
-            <h2>
-              {analysis.username} - Total Solved: {analysis.totals.solved} /{" "}
-              {analysis.totals.questions}
-            </h2>
-            <p className="total-percent">
-              Overall: {formatPercent(analysis.totals.percentage)}
-            </p>
+          <section className="dashboard-grid">
+            <article className="dashboard-card solved-card reveal-on-scroll">
+              <div className="ring-wrap">
+                <svg viewBox="0 0 120 120" className="progress-ring">
+                  <circle cx="60" cy="60" r="52" className="ring-track" />
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r="52"
+                    className="ring-progress"
+                    style={{
+                      strokeDasharray: `${(ringProgress / 100) * 327} 327`,
+                    }}
+                  />
+                </svg>
+                <div className="ring-center">
+                  <h3>
+                    {analysis.totals.solved}
+                    <span>/{analysis.totals.questions}</span>
+                  </h3>
+                  <p>Solved</p>
+                  <small>{analysis.totals.attempting} Attempting</small>
+                </div>
+              </div>
 
-            <div className="difficulty-grid">
-              {difficultyCards.map((item) => (
-                <article
-                  key={item.key}
-                  className={`difficulty-card ${item.className}`}
-                >
-                  <h3>{item.label}</h3>
-                  <p className="value">
-                    {item.data.solved} / {item.data.total}
-                  </p>
-                  <p className="percent">
-                    {formatPercent(item.data.percentage)}
-                  </p>
-                </article>
-              ))}
-            </div>
+              <div className="difficulty-pills">
+                {difficultyCards.map((item) => (
+                  <article
+                    key={item.key}
+                    className={`difficulty-pill ${item.className}`}
+                  >
+                    <h3>{item.label}</h3>
+                    <p>
+                      {item.data.solved}/{item.data.total}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </article>
+
+            <article className="dashboard-card badge-card reveal-on-scroll">
+              <h3>Badges</h3>
+              <p className="badge-count">0</p>
+              <p className="badge-note">Locked Badge</p>
+              <h4>Apr LeetCoding Challenge</h4>
+            </article>
+
+            <article className="dashboard-card activity-card reveal-on-scroll">
+              <div className="activity-head">
+                <h3>
+                  {analysis.recentActivity.last30DaysSubmissions} submissions in
+                  the past 30 days
+                </h3>
+                <p>
+                  Total active days:{" "}
+                  {Math.min(365, heatmapData.filter((d) => d.count > 0).length)}
+                  <span> | Max streak: {analysis.recentActivity.streak}</span>
+                </p>
+              </div>
+
+              <div className="heatmap-grid year-grid">
+                {heatmapData.map((point) => {
+                  const level = getHeatLevel(point.count, maxHeatCount);
+                  return (
+                    <span
+                      key={`year-heat-${point.date}`}
+                      className={`heat-cell level-${level}`}
+                      title={`${point.date}: ${point.count} submissions`}
+                    />
+                  );
+                })}
+              </div>
+
+              <div className="month-ticks">
+                {monthTicks.map((tick) => (
+                  <span
+                    key={`tick-${tick.month}-${tick.index}`}
+                    style={{
+                      left: `${(tick.index / Math.max(heatmapData.length - 1, 1)) * 100}%`,
+                    }}
+                  >
+                    {tick.month}
+                  </span>
+                ))}
+              </div>
+            </article>
           </section>
 
-          <section className="card">
+          <section className="card topic-dark reveal-on-scroll">
             <h2>Topic Coverage</h2>
             <p className="topics-note">
-              Percentage is based on your solved problems distribution.
+              Topic breakdown graph with color-coded coverage.
             </p>
 
-            <div className="topics-list">
-              {visibleTopics.map((topic) => (
-                <div key={topic.name} className="topic-row">
-                  <div className="topic-head">
+            <div className="topic-graph-list">
+              {topicGraphRows.map((topic, index) => (
+                <div key={`graph-${topic.name}`} className="topic-graph-row">
+                  <div className="topic-graph-head">
                     <span>{topic.name}</span>
                     <span>
                       {topic.solved} ({formatPercent(topic.percentage)})
                     </span>
                   </div>
-                  <div className="topic-track">
+                  <div className="topic-graph-track">
                     <div
-                      className="topic-fill"
-                      style={{ width: `${Math.min(topic.percentage, 100)}%` }}
+                      className="topic-graph-fill"
+                      style={{
+                        width: `${Math.min(topic.percentage, 100)}%`,
+                        background: getTopicColor(index),
+                      }}
                     />
                   </div>
                 </div>
@@ -374,66 +687,12 @@ function App() {
                 className="topic-toggle"
                 onClick={() => setShowAllTopics((value) => !value)}
               >
-                {showAllTopics ? "Show Top 3" : "Expand All"}
+                {showAllTopics ? "Show Less" : "Expand All"}
               </button>
             ) : null}
-
-            <div className="topic-table-wrap">
-              <h3>Topic Breakdown Table</h3>
-              <table className="topic-table">
-                <thead>
-                  <tr>
-                    <th>Topic</th>
-                    <th>Solved</th>
-                    <th>Coverage</th>
-                    <th>Band</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topicTableRows.map((topic) => (
-                    <tr key={`table-${topic.name}`}>
-                      <td>{topic.name}</td>
-                      <td>{topic.solved}</td>
-                      <td>{formatPercent(topic.percentage)}</td>
-                      <td>{getTopicBand(topic.percentage)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="heatmap-wrap">
-              <h3>Submission Activity Graph</h3>
-              <p className="topics-note">
-                Last {heatmapData.length} days with LeetCode-style intensity.
-              </p>
-
-              <div className="heatmap-grid">
-                {heatmapData.map((point) => {
-                  const level = getHeatLevel(point.count, maxHeatCount);
-                  return (
-                    <span
-                      key={`heat-${point.date}`}
-                      className={`heat-cell level-${level}`}
-                      title={`${point.date}: ${point.count} submissions`}
-                    />
-                  );
-                })}
-              </div>
-
-              <div className="heatmap-legend">
-                <span>Less</span>
-                <span className="heat-cell level-0" />
-                <span className="heat-cell level-1" />
-                <span className="heat-cell level-2" />
-                <span className="heat-cell level-3" />
-                <span className="heat-cell level-4" />
-                <span>More</span>
-              </div>
-            </div>
           </section>
 
-          <section className="card">
+          <section className="card coach-card reveal-on-scroll">
             <h2>AI Coach Evaluation</h2>
             <p className="topics-note">
               Get a hiring-oriented evaluation with strengths, weaknesses, and a
@@ -492,7 +751,7 @@ function App() {
           {!coachLoading && !coachError && reportSections.length > 0 ? (
             <>
               {scoreSection ? (
-                <article className="report-score-card">
+                <article className="report-score-card reveal-on-scroll">
                   <div className="report-score-badge">
                     <span className="score-value">{scoreValue ?? "--"}</span>
                     <span className="score-max">/100</span>
@@ -509,15 +768,17 @@ function App() {
 
               <div className="report-priority-grid">
                 {insightsSection ? (
-                  <article className="report-section featured">
-                    <h3>Current Insights</h3>
+                  <article className="report-section featured reveal-on-scroll">
+                    <h3 className="section-title section-title-insights">
+                      Current Insights
+                    </h3>
                     <ul>
                       {insightsSection.items.map((item, index) => (
                         <li
                           key={`insights-${index}`}
                           style={{ "--item-index": index }}
                         >
-                          {item}
+                          {renderLineWithHighlights(item)}
                         </li>
                       ))}
                     </ul>
@@ -525,36 +786,114 @@ function App() {
                 ) : null}
 
                 {readinessSection ? (
-                  <article className="report-section featured readiness">
-                    <h3>Company Readiness (%)</h3>
-                    <ul>
-                      {readinessSection.items.map((item, index) => (
-                        <li
-                          key={`readiness-${index}`}
-                          style={{ "--item-index": index }}
-                        >
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
+                  <article className="report-section featured readiness reveal-on-scroll">
+                    <h3 className="section-title section-title-readiness">
+                      Company Readiness (%)
+                    </h3>
+                    {(() => {
+                      const readinessRows = pairReadinessItems(
+                        readinessSection.items,
+                      );
+                      const avgReadiness = getAverageReadiness(readinessRows);
+
+                      return (
+                        <>
+                          {avgReadiness !== null ? (
+                            <div className="readiness-average">
+                              <span className="readiness-average-label">
+                                Average Readiness
+                              </span>
+                              <span className="readiness-score-pill">
+                                {avgReadiness}
+                                <small>/100</small>
+                              </span>
+                            </div>
+                          ) : null}
+
+                          <div className="section-row-list">
+                            {readinessRows.map((row, index) => {
+                              const parsed = parseReadinessHeading(row.heading);
+                              return (
+                                <article
+                                  key={`readiness-${index}`}
+                                  className="section-item-card"
+                                  style={{ "--item-index": index }}
+                                >
+                                  <div className="section-item-headline">
+                                    <p className="section-item-heading">
+                                      {renderLineWithHighlights(parsed.label)}
+                                    </p>
+                                    {parsed.score !== null ? (
+                                      <span className="readiness-score-pill">
+                                        {parsed.score}
+                                        <small>/100</small>
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {row.details ? (
+                                    <p className="section-item-details">
+                                      {renderLineWithHighlights(row.details)}
+                                    </p>
+                                  ) : null}
+                                </article>
+                              );
+                            })}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </article>
                 ) : null}
               </div>
 
               <div className="report-sections">
                 {remainingSections.map((section) => (
-                  <article key={section.title} className="report-section">
-                    <h3>{section.title}</h3>
-                    <ul>
-                      {section.items.map((item, index) => (
-                        <li
-                          key={`${section.title}-${index}`}
-                          style={{ "--item-index": index }}
-                        >
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
+                  <article
+                    key={section.title}
+                    className="report-section reveal-on-scroll"
+                  >
+                    <h3
+                      className={`section-title section-title-${getSectionTone(section.title)}`}
+                    >
+                      {section.title}
+                    </h3>
+                    {normalizeSectionTitle(section.title).includes(
+                      "topic breakdown",
+                    ) ? (
+                      <div className="section-row-list">
+                        {pairHeadingDetailItems(section.items).map(
+                          (row, index) => (
+                            <article
+                              key={`${section.title}-row-${index}`}
+                              className="section-item-card"
+                              style={{ "--item-index": index }}
+                            >
+                              <p className="section-item-heading">
+                                {renderLineWithHighlights(
+                                  stripTrailingColon(row.heading),
+                                )}
+                              </p>
+                              {row.details ? (
+                                <p className="section-item-details">
+                                  {renderLineWithHighlights(row.details)}
+                                </p>
+                              ) : null}
+                            </article>
+                          ),
+                        )}
+                      </div>
+                    ) : (
+                      <ul>
+                        {section.items.map((item, index) => (
+                          <li
+                            key={`${section.title}-${index}`}
+                            style={{ "--item-index": index }}
+                          >
+                            {renderLineWithHighlights(item)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </article>
                 ))}
               </div>

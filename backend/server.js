@@ -3,6 +3,15 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
 
+let admin = null;
+try {
+  // Firestore logging is optional in local/dev environments.
+  // If firebase-admin is unavailable, API endpoints continue to work.
+  admin = require("firebase-admin");
+} catch (_error) {
+  admin = null;
+}
+
 dotenv.config({ path: path.join(__dirname, ".env") });
 
 const app = express();
@@ -10,14 +19,50 @@ const PORT = process.env.PORT || 5000;
 const LEETCODE_GRAPHQL = "https://leetcode.com/graphql";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const FIRESTORE_IP_COLLECTION = "ip_searches";
 
+app.set("trust proxy", true);
 app.use(cors());
 app.use(express.json());
+
+let firestoreDb = null;
+
+function initFirestore() {
+  if (!admin) {
+    return null;
+  }
+
+  try {
+    if (!admin.apps.length) {
+      if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+        const serviceAccount = JSON.parse(
+          process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+        );
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+        });
+      } else {
+        // In Cloud Run/Firebase managed runtimes, use attached service account.
+        admin.initializeApp();
+      }
+    }
+    return admin.firestore();
+  } catch (error) {
+    console.error("Firestore initialization failed:", error.message);
+    return null;
+  }
+}
+
+firestoreDb = initFirestore();
 
 const ANALYZE_QUERY = `
   query userPublicProfile($username: String!) {
     matchedUser(username: $username) {
       username
+      profile {
+        ranking
+        reputation
+      }
       submitStatsGlobal {
         acSubmissionNum {
           difficulty
@@ -47,6 +92,39 @@ const ANALYZE_QUERY = `
   }
 `;
 
+const RECENT_SOLVED_QUERY_USER_NODE = `
+  query recentAcceptedFromUserNode($username: String!) {
+    matchedUser(username: $username) {
+      recentAcSubmissionList(limit: 30) {
+        title
+        titleSlug
+        timestamp
+      }
+    }
+  }
+`;
+
+const RECENT_SOLVED_QUERY_ROOT = `
+  query recentAcceptedFromRoot($username: String!) {
+    recentAcSubmissionList(username: $username, limit: 30) {
+      title
+      titleSlug
+      timestamp
+    }
+  }
+`;
+
+const RECENT_SUBMISSIONS_QUERY_ROOT = `
+  query recentSubmissionsFromRoot($username: String!) {
+    recentSubmissionList(username: $username, limit: 60) {
+      title
+      titleSlug
+      timestamp
+      statusDisplay
+    }
+  }
+`;
+
 const CONTEST_QUERY = `
   query userContestData($username: String!) {
     userContestRanking(username: $username) {
@@ -70,6 +148,73 @@ const CALENDAR_QUERY = `
 function getDifficultyCount(source, difficulty) {
   const entry = source.find((item) => item.difficulty === difficulty);
   return entry ? entry.count : 0;
+}
+
+function getClientIp(req) {
+  const xForwardedFor = req.headers["x-forwarded-for"];
+  if (typeof xForwardedFor === "string" && xForwardedFor.trim()) {
+    const first = xForwardedFor.split(",")[0].trim();
+    if (first) {
+      return first;
+    }
+  }
+
+  const candidate =
+    req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress;
+  return (candidate || "unknown").toString();
+}
+
+function toDocSafeId(value) {
+  return value.toString().trim().replaceAll("/", "_") || "unknown";
+}
+
+function toUsernameDocId(username) {
+  return username.toLowerCase().replace(/[^a-z0-9_-]/gi, "_");
+}
+
+async function logSearchInFirestore({ ipAddress, username }) {
+  if (!firestoreDb) {
+    return;
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const ipDocId = toDocSafeId(ipAddress);
+  const usernameDocId = toUsernameDocId(username);
+
+  const ipRef = firestoreDb.collection(FIRESTORE_IP_COLLECTION).doc(ipDocId);
+  const searchEventRef = ipRef.collection("searches").doc();
+  const usernameRef = ipRef.collection("usernames").doc(usernameDocId);
+
+  const batch = firestoreDb.batch();
+
+  batch.set(
+    ipRef,
+    {
+      ipAddress,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      totalSearches: admin.firestore.FieldValue.increment(1),
+    },
+    { merge: true },
+  );
+
+  batch.set(searchEventRef, {
+    username,
+    searchedAt: now,
+  });
+
+  batch.set(
+    usernameRef,
+    {
+      username,
+      count: admin.firestore.FieldValue.increment(1),
+      lastSearchedAt: now,
+      firstSearchedAt: now,
+    },
+    { merge: true },
+  );
+
+  await batch.commit();
 }
 
 async function postLeetCodeQuery(username, query) {
@@ -132,6 +277,9 @@ function getRecentActivity(calendarData) {
   let submissionMap = {};
   try {
     submissionMap = JSON.parse(calendarData.submissionCalendar);
+    if (typeof submissionMap === "string") {
+      submissionMap = JSON.parse(submissionMap);
+    }
   } catch (_error) {
     submissionMap = {};
   }
@@ -163,27 +311,132 @@ function getRecentActivity(calendarData) {
     last30DaysSubmissions,
     streak: calendarData.streak || 0,
     consistency,
-    dailyHeatmap: buildDailyHeatmap(submissionMap, 140),
+    dailyHeatmap: buildDailyHeatmap(submissionMap, 365),
   };
 }
 
 function buildDailyHeatmap(submissionMap, days) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const dayCountMap = {};
+  Object.entries(submissionMap).forEach(([timestamp, count]) => {
+    const d = new Date(Number(timestamp) * 1000);
+    const dayKey = d.toISOString().slice(0, 10);
+    dayCountMap[dayKey] = (dayCountMap[dayKey] || 0) + Number(count || 0);
+  });
+
+  const now = new Date();
+  const todayUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
 
   const points = [];
   for (let i = days - 1; i >= 0; i -= 1) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const ts = Math.floor(d.getTime() / 1000).toString();
-    const count = Number(submissionMap[ts] || 0);
+    const d = new Date(todayUtc);
+    d.setUTCDate(todayUtc.getUTCDate() - i);
+    const dayKey = d.toISOString().slice(0, 10);
+    const count = Number(dayCountMap[dayKey] || 0);
     points.push({
-      date: d.toISOString().slice(0, 10),
+      date: dayKey,
       count,
     });
   }
 
   return points;
+}
+
+function buildRecentSolvedProblems(recentAcSubmissionList) {
+  return (recentAcSubmissionList || []).map((item) => {
+    const ts = Number(item.timestamp || 0);
+    return {
+      title: item.title || "Unknown Problem",
+      titleSlug: item.titleSlug || "",
+      solvedAtEpoch: ts,
+      solvedAtIso: ts > 0 ? new Date(ts * 1000).toISOString() : null,
+      url: item.titleSlug
+        ? `https://leetcode.com/problems/${item.titleSlug}/`
+        : null,
+    };
+  });
+}
+
+function buildTimingInsights(recentSolvedProblems, last30DaysSubmissions) {
+  if (!recentSolvedProblems.length) {
+    return {
+      avgAcceptedPerDayLast30: 0,
+      avgHoursBetweenAccepted: null,
+      lastSolvedAtIso: null,
+      recentAcceptedCount: 0,
+    };
+  }
+
+  const solvedWithTime = recentSolvedProblems
+    .filter((item) => Number(item.solvedAtEpoch) > 0)
+    .sort((a, b) => b.solvedAtEpoch - a.solvedAtEpoch);
+
+  let totalGapSeconds = 0;
+  let gapCount = 0;
+  for (let i = 0; i < solvedWithTime.length - 1; i += 1) {
+    const gap =
+      solvedWithTime[i].solvedAtEpoch - solvedWithTime[i + 1].solvedAtEpoch;
+    if (gap > 0) {
+      totalGapSeconds += gap;
+      gapCount += 1;
+    }
+  }
+
+  const avgHoursBetweenAccepted =
+    gapCount > 0
+      ? Number((totalGapSeconds / gapCount / 3600).toFixed(2))
+      : null;
+
+  return {
+    avgAcceptedPerDayLast30: Number((last30DaysSubmissions / 30).toFixed(2)),
+    avgHoursBetweenAccepted,
+    lastSolvedAtIso: solvedWithTime[0]?.solvedAtIso || null,
+    recentAcceptedCount: solvedWithTime.length,
+  };
+}
+
+function pickRecentAcceptedSubmissions(payload) {
+  const fromUserNode = payload?.matchedUser?.recentAcSubmissionList;
+  if (Array.isArray(fromUserNode) && fromUserNode.length) {
+    return fromUserNode;
+  }
+
+  const fromRootAccepted = payload?.recentAcSubmissionList;
+  if (Array.isArray(fromRootAccepted) && fromRootAccepted.length) {
+    return fromRootAccepted;
+  }
+
+  const fromRootRecent = payload?.recentSubmissionList;
+  if (Array.isArray(fromRootRecent) && fromRootRecent.length) {
+    return fromRootRecent.filter(
+      (item) => (item.statusDisplay || "").toLowerCase() === "accepted",
+    );
+  }
+
+  return [];
+}
+
+async function fetchRecentSolvedProblems(username) {
+  const candidateQueries = [
+    RECENT_SOLVED_QUERY_USER_NODE,
+    RECENT_SOLVED_QUERY_ROOT,
+    RECENT_SUBMISSIONS_QUERY_ROOT,
+  ];
+
+  for (const query of candidateQueries) {
+    try {
+      const payload = await postLeetCodeQuery(username, query);
+      const picked = pickRecentAcceptedSubmissions(payload);
+      if (picked.length) {
+        return buildRecentSolvedProblems(picked);
+      }
+    } catch (_error) {
+      // LeetCode schema can vary between deployments; fall through to next query shape.
+    }
+  }
+
+  return [];
 }
 
 async function buildAnalysisData(username) {
@@ -216,6 +469,7 @@ async function buildAnalysisData(username) {
     matchedUser.tagProblemCounts || {},
     totalSolved,
   );
+  const recentSolvedProblems = await fetchRecentSolvedProblems(username);
 
   let contestRating = 0;
   try {
@@ -243,17 +497,32 @@ async function buildAnalysisData(username) {
     };
   }
 
+  const timing = buildTimingInsights(
+    recentSolvedProblems,
+    recentActivity.last30DaysSubmissions,
+  );
+
   return {
     username: matchedUser.username,
+    profile: {
+      ranking: Number(matchedUser.profile?.ranking || 0),
+      reputation: Number(matchedUser.profile?.reputation || 0),
+    },
     totals: {
       solved: totalSolved,
+      submissions: totalSubmissions,
+      attempting: Math.max(totalSubmissions - totalSolved, 0),
       questions: totalQuestions,
       percentage: totalQuestions > 0 ? (totalSolved / totalQuestions) * 100 : 0,
     },
     acceptanceRate:
       totalSubmissions > 0 ? (totalSolved / totalSubmissions) * 100 : 0,
+    attemptsPerSolved:
+      totalSolved > 0 ? Number((totalSubmissions / totalSolved).toFixed(2)) : 0,
     contestRating,
     recentActivity,
+    timing,
+    recentSolvedProblems,
     difficulty: {
       easy: {
         solved: easySolved,
@@ -346,14 +615,24 @@ OUTPUT FORMAT (STRICT):
 * Do not show long formulas or arithmetic steps
 
 3. Company Readiness (%):
-* FAANG: percentage + one reason
-* Product-based companies: percentage + one reason
-* Service-based companies: percentage + one reason
+* Use score out of 100 format, not percent symbol.
+* Format exactly like this with each reason on the next line:
+  FAANG: <score>/100
+  Reason: <one-line reason>
+  Product-based: <score>/100
+  Reason: <one-line reason>
+  Service-based: <score>/100
+  Reason: <one-line reason>
 
 4. Topic Breakdown:
-* Strong topics
-* Average topics
-* Weak topics (must highlight DP, Graph, Trees when weak)
+* Use heading then next-line details format exactly:
+  Strong:
+  <comma-separated topics>
+  Average:
+  <comma-separated topics>
+  Weak:
+  <comma-separated topics>
+* Must mention DP, Graph, Trees explicitly when weak.
 
 5. Key Weaknesses:
 * Missing topics
@@ -380,6 +659,7 @@ IMPORTANT RULES:
 * Keep output structured and clean
 * Prioritize actionable insights
 * Use exactly numbered headings 1 to 8
+* For every subsection, first line must be a heading label and second line must be details.
 
 Return ONLY the structured evaluation.`;
 }
@@ -411,6 +691,17 @@ app.get("/api/analyze", async (req, res) => {
 
   try {
     const analysis = await buildAnalysisData(username);
+
+    const ipAddress = getClientIp(req);
+    try {
+      await logSearchInFirestore({
+        ipAddress,
+        username: analysis.username,
+      });
+    } catch (logError) {
+      console.error("Failed to log search in Firestore:", logError.message);
+    }
+
     return res.json(analysis);
   } catch (error) {
     const status = error.status || 500;
