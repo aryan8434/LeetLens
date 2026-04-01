@@ -67,7 +67,8 @@ function parseReportSections(reportText) {
 }
 
 function normalizeSectionTitle(title) {
-  return (title || "")
+  const str = String(title || "");
+  return str
     .toLowerCase()
     .replace(/\([^)]*\)/g, "")
     .replace(/[^a-z\s]/g, "")
@@ -174,7 +175,7 @@ function pairReadinessItems(items) {
   for (let i = 0; i < items.length; i += 1) {
     const current = items[i] || "";
     const next = items[i + 1] || "";
-    if (next.toLowerCase().startsWith("reason:")) {
+    if (next && next.toLowerCase().startsWith("reason:")) {
       pairs.push({
         heading: current,
         details: next,
@@ -318,8 +319,22 @@ async function readApiPayload(response) {
 
 function buildHttpErrorMessage(response, payload, fallback) {
   const main = payload?.error || fallback;
-  const details = payload?.details ? ` (${payload.details})` : "";
-  return `${main}${details} [HTTP ${response.status}]`;
+  const rawText =
+    typeof payload?.raw === "string"
+      ? payload.raw
+          .replace(/<[^>]*>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+      : "";
+  const details = payload?.details
+    ? ` (${payload.details})`
+    : rawText
+      ? ` (${rawText.slice(0, 160)})`
+      : "";
+  const statusLabel = response.statusText
+    ? `HTTP ${response.status} ${response.statusText}`
+    : `HTTP ${response.status}`;
+  return `${main}${details} [${statusLabel}]`;
 }
 
 function App() {
@@ -391,8 +406,8 @@ function App() {
 
       setAnalysis(data);
       const cache = loadReportCache();
-      const cacheKey = data.username.toLowerCase();
-      const saved = cache[cacheKey];
+      const cacheKey = data.username ? data.username.toLowerCase() : "";
+      const saved = cacheKey ? cache[cacheKey] : null;
 
       if (saved?.report) {
         setCoachReport(saved.report);
@@ -477,45 +492,49 @@ function App() {
     }
   };
 
-  const difficultyCards = analysis
-    ? [
-        {
-          key: "easy",
-          label: "Easy",
-          className: "easy",
-          data: analysis.difficulty.easy,
-        },
-        {
-          key: "medium",
-          label: "Medium",
-          className: "medium",
-          data: analysis.difficulty.medium,
-        },
-        {
-          key: "hard",
-          label: "Hard",
-          className: "hard",
-          data: analysis.difficulty.hard,
-        },
-      ]
-    : [];
+  const difficultyCards =
+    analysis && analysis.difficulty
+      ? [
+          {
+            key: "easy",
+            label: "Easy",
+            className: "easy",
+            data: analysis.difficulty.easy || 0,
+          },
+          {
+            key: "medium",
+            label: "Medium",
+            className: "medium",
+            data: analysis.difficulty.medium || 0,
+          },
+          {
+            key: "hard",
+            label: "Hard",
+            className: "hard",
+            data: analysis.difficulty.hard || 0,
+          },
+        ]
+      : [];
 
-  const visibleTopics = analysis
-    ? showAllTopics
-      ? analysis.topics
-      : analysis.topics.slice(0, 3)
-    : [];
+  const visibleTopics =
+    analysis && analysis.topics
+      ? showAllTopics
+        ? analysis.topics
+        : analysis.topics.slice(0, 3)
+      : [];
 
-  const topicTableRows = analysis ? analysis.topics.slice(0, 10) : [];
+  const topicTableRows =
+    analysis && analysis.topics ? analysis.topics.slice(0, 10) : [];
   const heatmapData = analysis?.recentActivity?.dailyHeatmap || [];
   const maxHeatCount = heatmapData.reduce(
     (max, point) => Math.max(max, point.count),
     0,
   );
   const monthTicks = getMonthTicks(heatmapData);
-  const ringProgress = analysis
-    ? (analysis.totals.solved / Math.max(analysis.totals.questions, 1)) * 100
-    : 0;
+  const ringProgress =
+    analysis && analysis.totals
+      ? (analysis.totals.solved / Math.max(analysis.totals.questions, 1)) * 100
+      : 0;
   const topicGraphRows = analysis
     ? showAllTopics
       ? analysis.topics.slice(0, 20)

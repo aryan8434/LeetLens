@@ -787,6 +787,14 @@ app.post("/api/coach", async (req, res) => {
   }
 });
 
+// Serve static files from public folder (React frontend)
+app.use(express.static(path.join(__dirname, "public")));
+
+// SPA fallback: serve index.html for all non-API routes
+app.use((_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
 app.listen(PORT, () => {
   console.log(`API running on http://localhost:${PORT}`);
 });
