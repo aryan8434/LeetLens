@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { db } from "./firebase";
 import { 
-  collection, getDocs, collectionGroup, getCountFromServer, doc, updateDoc 
+  collection, getDocs, collectionGroup, getCountFromServer 
 } from "firebase/firestore";
 
 export default function App() {
@@ -18,48 +18,7 @@ export default function App() {
   const [folderVisitors, setFolderVisitors] = useState([]);
   const [loading, setLoading] = useState(false);
   const [expandedRows, setExpandedRows] = useState(new Set());
-
-  const [usersList, setUsersList] = useState([]);
-  const [usersLoading, setUsersLoading] = useState(false);
-
-  useEffect(() => {
-    if (activeTab === "users") {
-      fetchUsers();
-    }
-  }, [activeTab]);
-
-  const fetchUsers = async () => {
-    setUsersLoading(true);
-    try {
-      const snap = await getDocs(collection(db, "registered_users"));
-      const u = [];
-      snap.forEach(doc => u.push({ id: doc.id, ...doc.data() }));
-      setUsersList(u);
-    } catch(err) {
-      console.error(err);
-    } finally {
-      setUsersLoading(false);
-    }
-  };
-
-  const updateCredits = async (userId, currentCredits) => {
-    const newCredsStr = prompt("Enter new credit amount:", currentCredits);
-    if (newCredsStr === null) return; // Cancelled
-    const newCreds = parseInt(newCredsStr, 10);
-    if (isNaN(newCreds)) {
-      alert("Invalid number.");
-      return;
-    }
-    
-    try {
-      await updateDoc(doc(db, "registered_users", userId), { credits: newCreds });
-      alert("Credits updated successfully!");
-      fetchUsers(); // Refresh
-    } catch(err) {
-      console.error(err);
-      alert("Failed to update credits. Check your Firestore rules.");
-    }
-  };
+  const [registeredUsers, setRegisteredUsers] = useState([]);
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -72,14 +31,38 @@ export default function App() {
         const searchesSnapshot = await getCountFromServer(searchesQuery);
         setTotalSearches(searchesSnapshot.data().count);
 
-        const foldersSnapshot = await getDocs(collection(db, "user_searches"));
-        const folders = [];
-        foldersSnapshot.forEach(doc => {
-          folders.push(doc.id);
-        });
+        const sortedFolders = folders.reverse();
+        const recentFolders = sortedFolders.slice(0, 10);
+        const foldersWithData = [];
+
+        for (const folderId of recentFolders) {
+          const vSnapshot = await getDocs(collection(db, "user_searches", folderId, "visitors"));
+          const vList = [];
+          vSnapshot.forEach(vDoc => {
+            const data = vDoc.data();
+            vList.push(data.ip || "Unknown");
+          });
+          foldersWithData.push({
+            id: folderId,
+            ips: [...new Set(vList)]
+          });
+        }
+
+        for (let i = 10; i < sortedFolders.length; i++) {
+          foldersWithData.push({
+            id: sortedFolders[i],
+            ips: null
+          });
+        }
         
-        // Sorting string dates might vary; reversing displays latest if incrementally added
-        setDailyFolders(folders.reverse());
+        setDailyFolders(foldersWithData);
+
+        const regUsersSnapshot = await getDocs(collection(db, "registered_users"));
+        const regUsers = [];
+        regUsersSnapshot.forEach(doc => {
+          regUsers.push({ id: doc.id, ...doc.data() });
+        });
+        setRegisteredUsers(regUsers.sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
       } catch (err) {
         console.error("Failed to load metrics:", err);
       }
@@ -155,19 +138,34 @@ export default function App() {
         </div>
       </div>
 
-      <h2 className="section-title"><Folder size={20} /> Daily Tracking Folders</h2>
+      <h2 className="section-title"><Folder size={20} /> Daily Tracking Folders & Visitors</h2>
       <div className="folder-grid">
         {dailyFolders.length === 0 ? (
           <p style={{ color: "var(--text-secondary)" }}>No daily logs generated yet.</p>
         ) : (
-          dailyFolders.map(folderName => (
+          dailyFolders.map(folder => (
             <div 
-              key={folderName} 
+              key={folder.id} 
               className="folder-card glass"
-              onClick={() => openFolder(folderName)}
+              onClick={() => openFolder(folder.id)}
             >
-              <Folder size={32} />
-              <span className="folder-name">{folderName}</span>
+              <div className="folder-card-header">
+                <Folder size={28} className="folder-icon" />
+                <span className="folder-name">{folder.id}</span>
+              </div>
+              <div className="folder-card-ips">
+                {folder.ips ? (
+                  folder.ips.length > 0 ? (
+                    folder.ips.map((ip, idx) => (
+                      <span key={idx} className="mini-ip-chip">{ip}</span>
+                    ))
+                  ) : (
+                    <span className="folder-card-empty">No visitors</span>
+                  )
+                ) : (
+                  <span className="folder-card-empty">Click to load</span>
+                )}
+              </div>
             </div>
           ))
         )}
@@ -275,59 +273,47 @@ export default function App() {
     </>
   );
 
-  const renderUsersTab = () => (
+  const renderRegisteredUsers = () => (
     <>
       <div className="page-header">
-        <h1>User Management</h1>
-        <p>Edit user credits and view placeholder payment history.</p>
+        <h1>Registered Users</h1>
+        <p>List of all users signed up on LeetLens.</p>
       </div>
 
-      {usersLoading ? (
-        <div className="loading-wrapper glass">
-          <Loader2 size={32} className="spinner" />
-          <p>Fetching users...</p>
-        </div>
-      ) : (
-        <div className="table-container glass">
-          <table>
-            <thead>
+      <div className="table-container glass">
+        <table>
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Name</th>
+              <th>Credits</th>
+              <th>IP Address</th>
+              <th>Created At</th>
+            </tr>
+          </thead>
+          <tbody>
+            {registeredUsers.length === 0 && (
               <tr>
-                <th>Email</th>
-                <th>Joined Date</th>
-                <th>Credits</th>
-                <th>Payments</th>
-                <th>Actions</th>
+                <td colSpan="5" style={{ textAlign: "center", color: "var(--text-secondary)", padding: "32px" }}>
+                  No registered users found.
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {usersList.length === 0 && (
-                <tr>
-                  <td colSpan="5" style={{ textAlign: "center", color: "var(--text-secondary)", padding: "32px" }}>
-                    No users registered yet.
-                  </td>
+            )}
+            {registeredUsers.map(user => {
+              const dateVal = user.createdAt?.toDate();
+              return (
+                <tr className="table-row" key={user.id}>
+                  <td style={{ color: "var(--accent)", fontWeight: "500" }}>{user.email || "No Email"}</td>
+                  <td>{user.name || "--"}</td>
+                  <td><span className="chip">{user.credits} Credits</span></td>
+                  <td style={{ fontFamily: "monospace" }}>{user.ipAddress || "--"}</td>
+                  <td>{dateVal ? dateVal.toLocaleDateString() + ' ' + dateVal.toLocaleTimeString() : "--"}</td>
                 </tr>
-              )}
-              {usersList.map((usr) => (
-                <tr key={usr.id} className="table-row">
-                  <td>{usr.email || "N/A"}</td>
-                  <td>{usr.createdAt?.toDate ? usr.createdAt.toDate().toLocaleString() : "Unknown"}</td>
-                  <td><span style={{color: '#3b82f6', fontWeight: 'bold'}}>{usr.credits !== undefined ? usr.credits : 0}</span></td>
-                  <td>
-                    <button className="action-btn" onClick={() => alert("Payment history placeholder. No real data yet.\n\nTransactions:\n- 3 Credits (Sign up bonus) - $0.00")}>
-                      View Payments
-                    </button>
-                  </td>
-                  <td>
-                    <button className="action-btn" onClick={() => updateCredits(usr.id, usr.credits)} style={{color: '#a78bfa', marginLeft: '10px'}}>
-                      Edit Credits
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 
@@ -340,7 +326,7 @@ export default function App() {
         </div>
         <nav className="nav-links">
           <button 
-            className={`nav-item ${activeTab === 'overview' ? 'active' : ''}`}
+            className={`nav-item ${!selectedFolder && activeTab === 'overview' ? 'active' : ''}`}
             onClick={() => { setSelectedFolder(null); setActiveTab("overview"); }}
           >
             <LayoutDashboard size={18} />
@@ -351,12 +337,12 @@ export default function App() {
             onClick={() => { setSelectedFolder(null); setActiveTab("users"); }}
           >
             <Users size={18} />
-            Users & Credits
+            Registered Users
           </button>
           <button 
-            className={`nav-item ${activeTab === 'folders' ? 'active' : ''}`}
-            disabled={!selectedFolder && activeTab !== 'folders'}
-            style={{ opacity: selectedFolder || activeTab === 'folders' ? 1 : 0.5, cursor: selectedFolder || activeTab === 'folders' ? 'pointer' : 'default' }}
+            className={`nav-item ${selectedFolder ? 'active' : ''}`}
+            disabled={!selectedFolder}
+            style={{ opacity: selectedFolder ? 1 : 0.5, cursor: selectedFolder ? 'pointer' : 'default' }}
           >
             <Folder size={18} />
             Day Details
@@ -365,9 +351,7 @@ export default function App() {
       </aside>
 
       <main className="main-content">
-        {activeTab === "overview" && renderOverview()}
-        {activeTab === "folders" && renderFolderDetails()}
-        {activeTab === "users" && renderUsersTab()}
+        {activeTab === 'users' ? renderRegisteredUsers() : (!selectedFolder ? renderOverview() : renderFolderDetails())}
       </main>
     </div>
   );

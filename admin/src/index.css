@@ -1,18 +1,18 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  --bg-dark: #0f172a;
-  --bg-sidebar: rgba(30, 41, 59, 0.7);
-  --bg-card: rgba(30, 41, 59, 0.6);
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
+  --bg-dark: #09090b;
+  --bg-sidebar: rgba(9, 9, 11, 0.85);
+  --bg-card: rgba(24, 24, 27, 0.65);
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
   --accent: #3b82f6;
   --accent-glow: rgba(59, 130, 246, 0.5);
   --accent-hover: #2563eb;
-  --border-light: rgba(255, 255, 255, 0.1);
+  --border-light: rgba(255, 255, 255, 0.08);
   --green: #10b981;
-  --radius: 16px;
-  --radius-sm: 8px;
+  --radius: 20px;
+  --radius-sm: 10px;
 }
 
 * {
@@ -26,7 +26,7 @@ body {
   background-color: var(--bg-dark);
   color: var(--text-primary);
   min-height: 100vh;
-  background: radial-gradient(circle at top right, #1e1b4b, var(--bg-dark) 50%);
+  background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.15), var(--bg-dark) 40%);
   background-attachment: fixed;
   overflow-x: hidden;
 }
@@ -195,33 +195,73 @@ body {
 
 .folder-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
 }
 
 .folder-card {
-  padding: 24px 20px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 12px;
+  gap: 16px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
 }
 
 .folder-card:hover {
-  background: rgba(255, 255, 255, 0.1);
-  transform: translateY(-2px);
-  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-4px);
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 16px rgba(59, 130, 246, 0.2);
 }
 
-.folder-card svg {
+.folder-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.folder-card-header .folder-icon {
   color: var(--accent);
+  filter: drop-shadow(0 0 8px var(--accent-glow));
 }
 
 .folder-name {
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
+  letter-spacing: -0.3px;
+  color: var(--text-primary);
+}
+
+.folder-card-ips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.mini-ip-chip {
+  font-size: 0.75rem;
+  font-family: monospace;
+  background: rgba(59, 130, 246, 0.1);
+  color: #60a5fa;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  transition: all 0.2s;
+}
+
+.folder-card:hover .mini-ip-chip {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.folder-card-empty {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-style: italic;
 }
 
 .table-container {
