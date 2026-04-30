@@ -31,31 +31,14 @@ export default function App() {
         const searchesSnapshot = await getCountFromServer(searchesQuery);
         setTotalSearches(searchesSnapshot.data().count);
 
-        const sortedFolders = folders.reverse();
-        const recentFolders = sortedFolders.slice(0, 10);
-        const foldersWithData = [];
-
-        for (const folderId of recentFolders) {
-          const vSnapshot = await getDocs(collection(db, "user_searches", folderId, "visitors"));
-          const vList = [];
-          vSnapshot.forEach(vDoc => {
-            const data = vDoc.data();
-            vList.push(data.ip || "Unknown");
-          });
-          foldersWithData.push({
-            id: folderId,
-            ips: [...new Set(vList)]
-          });
-        }
-
-        for (let i = 10; i < sortedFolders.length; i++) {
-          foldersWithData.push({
-            id: sortedFolders[i],
-            ips: null
-          });
-        }
+        const foldersSnapshot = await getDocs(collection(db, "user_searches"));
+        const folders = [];
+        foldersSnapshot.forEach(doc => {
+          folders.push(doc.id);
+        });
         
-        setDailyFolders(foldersWithData);
+        // Sorting string dates might vary; reversing displays latest if incrementally added
+        setDailyFolders(folders.reverse());
 
         const regUsersSnapshot = await getDocs(collection(db, "registered_users"));
         const regUsers = [];
@@ -138,34 +121,19 @@ export default function App() {
         </div>
       </div>
 
-      <h2 className="section-title"><Folder size={20} /> Daily Tracking Folders & Visitors</h2>
+      <h2 className="section-title"><Folder size={20} /> Daily Tracking Folders</h2>
       <div className="folder-grid">
         {dailyFolders.length === 0 ? (
           <p style={{ color: "var(--text-secondary)" }}>No daily logs generated yet.</p>
         ) : (
-          dailyFolders.map(folder => (
+          dailyFolders.map(folderName => (
             <div 
-              key={folder.id} 
+              key={folderName} 
               className="folder-card glass"
-              onClick={() => openFolder(folder.id)}
+              onClick={() => openFolder(folderName)}
             >
-              <div className="folder-card-header">
-                <Folder size={28} className="folder-icon" />
-                <span className="folder-name">{folder.id}</span>
-              </div>
-              <div className="folder-card-ips">
-                {folder.ips ? (
-                  folder.ips.length > 0 ? (
-                    folder.ips.map((ip, idx) => (
-                      <span key={idx} className="mini-ip-chip">{ip}</span>
-                    ))
-                  ) : (
-                    <span className="folder-card-empty">No visitors</span>
-                  )
-                ) : (
-                  <span className="folder-card-empty">Click to load</span>
-                )}
-              </div>
+              <Folder size={32} />
+              <span className="folder-name">{folderName}</span>
             </div>
           ))
         )}

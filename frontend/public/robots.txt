@@ -1,4 +1,13 @@
 User-agent: *
 Allow: /
+Disallow: /admin/
+Disallow: /.git/
+Disallow: /.env*
 
-Sitemap: https://your-leetlens-url.vercel.app/sitemap.xml
+Sitemap: https://leetlens.teth.app/sitemap.xml
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
