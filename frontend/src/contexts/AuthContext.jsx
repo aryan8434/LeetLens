@@ -34,6 +34,33 @@ export function AuthProvider({ children }) {
         const data = await response.json();
         setCredits(data.credits);
       }
+
+      // Ask for location to collect demographic data for recruiters
+      if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            try {
+              const lat = position.coords.latitude.toFixed(4);
+              const lng = position.coords.longitude.toFixed(4);
+              const locationString = `Lat: ${lat}, Lng: ${lng}`;
+
+              await fetch(`${API_BASE_URL}/api/profile`, {
+                method: "PUT",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ location: locationString }),
+              });
+            } catch (err) {
+              console.error("Error updating location:", err);
+            }
+          },
+          (error) => {
+            console.warn("Location access denied or failed:", error.message);
+          }
+        );
+      }
     } catch (error) {
       console.error("Error syncing user with backend:", error);
     }
