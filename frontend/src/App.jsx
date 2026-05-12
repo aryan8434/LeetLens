@@ -928,6 +928,7 @@ function App() {
         </section>
       ) : null}
     </main>
+    </div>
   );
 }
 
