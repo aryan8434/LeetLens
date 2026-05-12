@@ -299,7 +299,13 @@ function getHeatLevel(count, maxCount) {
 function App() {
   const [username, setUsername] = useState("");
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(() => {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+
+    return window.innerWidth > 900;
+  });
   const [currentPage, setCurrentPage] = useState('home');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -315,9 +321,6 @@ function App() {
     // Apply theme class to document
     document.documentElement.classList.toggle('light-theme', theme === 'light');
     localStorage.setItem('theme', theme);
-
-    // close mobile menu on route change
-    setMenuOpen(false);
 
     const targets = document.querySelectorAll(".reveal-on-scroll");
     if (!targets.length) {
@@ -396,8 +399,13 @@ function App() {
 
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
+  const isHomePage = currentPage === 'home';
+
   const navigate = (page) => {
     setCurrentPage(page);
+    if (typeof window !== 'undefined' && window.innerWidth <= 900) {
+      setMenuOpen(false);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -518,7 +526,7 @@ function App() {
   );
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout ${menuOpen ? 'sidebar-open' : 'sidebar-collapsed'}`}>
       <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
         <div className="sidebar-top">
           <img src="/logo.png" alt="LeetLens" className="brand-logo" />
@@ -557,39 +565,41 @@ function App() {
             </span>
           )}
         </button>
-      <div className="hero">
-        <div>
-          <header className="brand-row-small">
-            <img src="/logo.png" alt="LeetLens logo" className="brand-logo" />
-            <h1 className="brand-wordmark">
-              <span className="leet">Leet</span>
-              <span className="lens">Lens</span>
-            </h1>
-          </header>
+      {isHomePage ? (
+        <div className="hero">
+          <div>
+            <header className="brand-row-small">
+              <img src="/logo.png" alt="LeetLens logo" className="brand-logo" />
+              <h1 className="brand-wordmark">
+                <span className="leet">Leet</span>
+                <span className="lens">Lens</span>
+              </h1>
+            </header>
 
-          <p className="subtitle">Track your problem solving progress and trends.</p>
+            <p className="subtitle">Track your problem solving progress and trends.</p>
 
-          <section className="card analyze-card">
-            <h2>Analyze LeetCode Profile</h2>
-            <form className="analyze-form" onSubmit={handleAnalyze}>
-              <input
-                type="text"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="Paste or type your LeetCode username"
-              />
-              <button type="submit" disabled={loading}>
-                {loading ? "Analyzing..." : "Analyze"}
-              </button>
-            </form>
-            {error ? <p className="error">{error}</p> : null}
-          </section>
+            <section className="card analyze-card">
+              <h2>Analyze LeetCode Profile</h2>
+              <form className="analyze-form" onSubmit={handleAnalyze}>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  placeholder="Paste or type your LeetCode username"
+                />
+                <button type="submit" disabled={loading}>
+                  {loading ? "Analyzing..." : "Analyze"}
+                </button>
+              </form>
+              {error ? <p className="error">{error}</p> : null}
+            </section>
+          </div>
+
+          <div className="hero-visual">
+            <img src={heroImg} alt="LeetLens preview" style={{ width: "100%", display: "block" }} />
+          </div>
         </div>
-
-        <div className="hero-visual">
-          <img src={heroImg} alt="LeetLens preview" style={{ width: "100%", display: "block" }} />
-        </div>
-      </div>
+      ) : null}
 
       {/* Simple client-side pages for additional screens */}
       {currentPage !== 'home' && (
@@ -604,7 +614,7 @@ function App() {
         </section>
       )}
 
-      {analysis ? (
+      {analysis && isHomePage ? (
         <>
           <section className="dashboard-grid">
             <article className="dashboard-card solved-card reveal-on-scroll">
@@ -762,7 +772,7 @@ function App() {
         </>
       ) : null}
 
-      {showReportPage ? (
+      {showReportPage && isHomePage ? (
         <section className="report-page">
           <div className="report-header">
             <h2>AI Evaluation Report</h2>
