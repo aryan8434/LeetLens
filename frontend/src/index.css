@@ -26,6 +26,24 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Light theme overrides */
+.light-theme {
+  --bg-900: #f8fafc;
+  --bg-800: #ffffff;
+  --panel: rgba(15, 23, 42, 0.03);
+  --muted: #475569;
+  --accent: #2563eb;
+  --accent-2: #06a6d4;
+  --positive: #10b981;
+  --danger: #ef4444;
+  color: #0f172a;
+}
+
+/* Smooth transitions for theme changes */
+* {
+  transition: background-color 240ms ease, color 240ms ease, border-color 240ms ease;
+}
+
 * {
   box-sizing: border-box;
 }

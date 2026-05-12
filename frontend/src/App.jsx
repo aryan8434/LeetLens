@@ -298,6 +298,9 @@ function getHeatLevel(count, maxCount) {
 
 function App() {
   const [username, setUsername] = useState("");
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState('home');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -309,6 +312,13 @@ function App() {
   const [showReportPage, setShowReportPage] = useState(false);
 
   useEffect(() => {
+    // Apply theme class to document
+    document.documentElement.classList.toggle('light-theme', theme === 'light');
+    localStorage.setItem('theme', theme);
+
+    // close mobile menu on route change
+    setMenuOpen(false);
+
     const targets = document.querySelectorAll(".reveal-on-scroll");
     if (!targets.length) {
       return undefined;
@@ -382,6 +392,13 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+
+  const navigate = (page) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const formatPercent = (value) => `${value.toFixed(1)}%`;
@@ -501,7 +518,30 @@ function App() {
   );
 
   return (
-    <main className="container">
+    <div className="app-layout">
+      <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
+        <div className="sidebar-top">
+          <img src="/logo.png" alt="LeetLens" className="brand-logo" />
+          <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
+            {theme === 'dark' ? '🌙' : '☀️'}
+          </button>
+        </div>
+
+        <nav className="sidebar-nav">
+          <button className={currentPage==='home'? 'active' : ''} onClick={() => navigate('home')}>Home</button>
+          <button className={currentPage==='profile'? 'active' : ''} onClick={() => navigate('profile')}>Profile</button>
+          <button className={currentPage==='credits'? 'active' : ''} onClick={() => navigate('credits')}>Credits</button>
+          <button className={currentPage==='reports'? 'active' : ''} onClick={() => navigate('reports')}>Reports</button>
+          <button onClick={() => navigate('analyze')}>Analyze</button>
+        </nav>
+
+        <div className="sidebar-footer">
+          <small>LeetLens</small>
+        </div>
+      </aside>
+
+      <main className="container">
+        <button className="mobile-menu-btn" onClick={() => setMenuOpen(v => !v)} aria-label="Toggle menu">☰</button>
       <div className="hero">
         <div>
           <header className="brand-row-small">
@@ -535,6 +575,19 @@ function App() {
           <img src={heroImg} alt="LeetLens preview" style={{ width: "100%", display: "block" }} />
         </div>
       </div>
+
+      {/* Simple client-side pages for additional screens */}
+      {currentPage !== 'home' && (
+        <section className="card page-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ margin: 0, color: 'var(--muted)' }}>{currentPage.charAt(0).toUpperCase() + currentPage.slice(1)}</h2>
+            <button className="action-btn" onClick={() => navigate('home')}>Back Home</button>
+          </div>
+          <p style={{ marginTop: 12, color: 'var(--muted)' }}>
+            This is a placeholder for the {currentPage} page. We can wire real data here (profile, credits management, saved reports).
+          </p>
+        </section>
+      )}
 
       {analysis ? (
         <>
