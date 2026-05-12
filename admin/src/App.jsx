@@ -4,8 +4,9 @@ import {
   Search, Shield, LayoutDashboard, Monitor, Smartphone, Loader2
 } from "lucide-react";
 import { db } from "./firebase";
-import { 
-  collection, getDocs, collectionGroup, getCountFromServer 
+import {
+  collection, getDocs, collectionGroup, getCountFromServer,
+  doc, updateDoc
 } from "firebase/firestore";
 
 export default function App() {
@@ -19,6 +20,9 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [registeredUsers, setRegisteredUsers] = useState([]);
+  const [editingCreditsId, setEditingCreditsId] = useState(null);
+  const [editingCreditsValue, setEditingCreditsValue] = useState(0);
+  const [updateLoading, setUpdateLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
@@ -274,11 +278,39 @@ export default function App() {
             )}
             {registeredUsers.map(user => {
               const dateVal = user.createdAt?.toDate();
+              const isEditing = editingCreditsId === user.id;
+
               return (
                 <tr className="table-row" key={user.id}>
                   <td style={{ color: "var(--accent)", fontWeight: "500" }}>{user.email || "No Email"}</td>
                   <td>{user.name || "--"}</td>
-                  <td><span className="chip">{user.credits} Credits</span></td>
+                  <td>
+                    {isEditing ? (
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <input
+                          type="number"
+                          min={0}
+                          value={editingCreditsValue}
+                          onChange={(e) => setEditingCreditsValue(Number(e.target.value))}
+                          style={{ width: 100 }}
+                          disabled={updateLoading}
+                        />
+                        <button className="action-btn" onClick={() => saveCredits(user.id)} disabled={updateLoading}>
+                          {updateLoading ? 'Saving...' : 'Save'}
+                        </button>
+                        <button className="action-btn" onClick={() => { setEditingCreditsId(null); setEditingCreditsValue(0); }} disabled={updateLoading}>
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span className="chip">{user.credits} Credits</span>
+                        <button className="action-btn" onClick={() => startEditCredits(user)}>
+                          Edit
+                        </button>
+                      </div>
+                    )}
+                  </td>
                   <td style={{ fontFamily: "monospace" }}>{user.ipAddress || "--"}</td>
                   <td>{dateVal ? dateVal.toLocaleDateString() + ' ' + dateVal.toLocaleTimeString() : "--"}</td>
                 </tr>
@@ -289,6 +321,31 @@ export default function App() {
       </div>
     </>
   );
+
+  const startEditCredits = (user) => {
+    setEditingCreditsId(user.id);
+    setEditingCreditsValue(Number(user.credits || 0));
+  };
+
+  const saveCredits = async (userId) => {
+    const newCredits = Number(editingCreditsValue || 0);
+    if (Number.isNaN(newCredits) || newCredits < 0) return alert('Please enter a valid non-negative number');
+
+    setUpdateLoading(true);
+    try {
+      await updateDoc(doc(db, 'registered_users', userId), { credits: newCredits });
+
+      // Update local state optimistically
+      setRegisteredUsers(prev => prev.map(u => u.id === userId ? { ...u, credits: newCredits } : u));
+      setEditingCreditsId(null);
+      setEditingCreditsValue(0);
+    } catch (err) {
+      console.error('Failed to update credits:', err);
+      alert('Failed to update credits. See console for details.');
+    } finally {
+      setUpdateLoading(false);
+    }
+  };
 
   return (
     <div className="app-container">
