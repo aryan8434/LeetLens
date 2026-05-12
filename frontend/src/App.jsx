@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import "./App.css";
+import heroImg from "./assets/hero.png";
 
 const REPORT_CACHE_KEY = "leetlensCoachReports_v2";
 
@@ -501,32 +502,39 @@ function App() {
 
   return (
     <main className="container">
-      <header className="brand-row">
-        <img src="/logo.png" alt="LeetLens logo" className="brand-logo" />
-        <h1 className="brand-wordmark">
-          <span className="leet">Leet</span>
-          <span className="lens">Lens</span>
-        </h1>
-      </header>
-      <p className="subtitle">
-        Track your problem solving progress and trends.
-      </p>
+      <div className="hero">
+        <div>
+          <header className="brand-row-small">
+            <img src="/logo.png" alt="LeetLens logo" className="brand-logo" />
+            <h1 className="brand-wordmark">
+              <span className="leet">Leet</span>
+              <span className="lens">Lens</span>
+            </h1>
+          </header>
 
-      <section className="card analyze-card">
-        <h2>Analyze LeetCode Profile</h2>
-        <form className="analyze-form" onSubmit={handleAnalyze}>
-          <input
-            type="text"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            placeholder="Paste or type your LeetCode username"
-          />
-          <button type="submit" disabled={loading}>
-            {loading ? "Analyzing..." : "Analyze"}
-          </button>
-        </form>
-        {error ? <p className="error">{error}</p> : null}
-      </section>
+          <p className="subtitle">Track your problem solving progress and trends.</p>
+
+          <section className="card analyze-card">
+            <h2>Analyze LeetCode Profile</h2>
+            <form className="analyze-form" onSubmit={handleAnalyze}>
+              <input
+                type="text"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="Paste or type your LeetCode username"
+              />
+              <button type="submit" disabled={loading}>
+                {loading ? "Analyzing..." : "Analyze"}
+              </button>
+            </form>
+            {error ? <p className="error">{error}</p> : null}
+          </section>
+        </div>
+
+        <div className="hero-visual">
+          <img src={heroImg} alt="LeetLens preview" style={{ width: "100%", display: "block" }} />
+        </div>
+      </div>
 
       {analysis ? (
         <>
