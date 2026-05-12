@@ -19,6 +19,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [registeredUsers, setRegisteredUsers] = useState([]);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -48,6 +49,7 @@ export default function App() {
         setRegisteredUsers(regUsers.sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
       } catch (err) {
         console.error("Failed to load metrics:", err);
+        setErrorMsg("Failed to load metrics. See console for details.");
       }
     };
     fetchMetrics();
@@ -58,6 +60,7 @@ export default function App() {
     setSelectedFolder(folderId);
     setExpandedRows(new Set()); 
     setActiveTab("folders");
+    setErrorMsg(null);
     
     try {
       const vSnapshot = await getDocs(collection(db, "user_searches", folderId, "visitors"));
@@ -82,6 +85,7 @@ export default function App() {
       setFolderVisitors(visitors.sort((a,b) => (b.last_visited_at?.seconds || 0) - (a.last_visited_at?.seconds || 0)));
     } catch (err) {
       console.error(err);
+      setErrorMsg(`Failed to load details for ${folderId}. Check console for error.`);
     } finally {
       setLoading(false);
     }
@@ -143,13 +147,14 @@ export default function App() {
 
   const renderFolderDetails = () => (
     <>
-      <button className="back-btn" onClick={() => setSelectedFolder(null)}>
+      <button className="back-btn" onClick={() => { setSelectedFolder(null); setActiveTab("overview"); setErrorMsg(null); }}>
         <ArrowLeft size={18} /> Back to Overview
       </button>
 
       <div className="page-header">
         <h1>{selectedFolder}</h1>
         <p>Visitor logs and search details for this specific day.</p>
+        {errorMsg && <p style={{ color: "#ffb4b4", marginTop: 8 }}>{errorMsg}</p>}
       </div>
 
       {loading ? (
