@@ -600,11 +600,42 @@
   position: absolute;
   top: 16px;
   left: 16px;
+  width: 44px;
+  height: 44px;
   background: rgba(0,0,0,0.35);
   border: none;
   color: white;
-  padding: 8px 10px;
   border-radius: 8px;
+  padding: 0;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(2, 6, 23, 0.3);
+}
+
+.mobile-menu-btn.open {
+  background: rgba(15, 23, 42, 0.82);
+}
+
+.menu-dots {
+  width: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  align-items: center;
+}
+
+.menu-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.menu-close {
+  font-size: 1.7rem;
+  line-height: 1;
+  transform: translateY(-1px);
 }
 
 /* Page card placeholder */

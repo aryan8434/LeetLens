@@ -541,7 +541,22 @@ function App() {
       </aside>
 
       <main className="container">
-        <button className="mobile-menu-btn" onClick={() => setMenuOpen(v => !v)} aria-label="Toggle menu">☰</button>
+        <button
+          className={`mobile-menu-btn ${menuOpen ? 'open' : ''}`}
+          onClick={() => setMenuOpen((value) => !value)}
+          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+          aria-pressed={menuOpen}
+        >
+          {menuOpen ? (
+            <span aria-hidden="true" className="menu-close">×</span>
+          ) : (
+            <span aria-hidden="true" className="menu-dots">
+              <span />
+              <span />
+              <span />
+            </span>
+          )}
+        </button>
       <div className="hero">
         <div>
           <header className="brand-row-small">
