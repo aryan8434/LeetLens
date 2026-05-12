@@ -1,47 +1,14 @@
 @import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap");
 :root {
-  /* Color palette */
-  --bg-900: #0b1220;
-  --bg-800: #0f1724;
-  --panel: rgba(255,255,255,0.06);
-  --muted: #94a3b8;
-  --accent: #4f46e5;
-  --accent-2: #06b6d4;
-  --positive: #10b981;
-  --danger: #ef4444;
-
-  /* Spacing & sizing */
-  --container-width: min(1100px, 96%);
-  --radius: 14px;
-  --glass-blur: 8px;
-
-  /* Typography */
-  --font-sans: "Montserrat", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  font-family: var(--font-sans);
+  font-family: "Montserrat", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #e6eef8;
-  background-color: var(--bg-900);
+  color: #111827;
+  background-color: #2c3340;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Light theme overrides */
-.light-theme {
-  --bg-900: #f8fafc;
-  --bg-800: #ffffff;
-  --panel: rgba(15, 23, 42, 0.03);
-  --muted: #475569;
-  --accent: #2563eb;
-  --accent-2: #06a6d4;
-  --positive: #10b981;
-  --danger: #ef4444;
-  color: #0f172a;
-}
-
-/* Smooth transitions for theme changes */
-* {
-  transition: background-color 240ms ease, color 240ms ease, border-color 240ms ease;
 }
 
 * {
@@ -51,9 +18,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(1200px 600px at 10% 10%, rgba(79,70,229,0.12), transparent 12%),
-              linear-gradient(120deg, #0f1724 0%, #0b1220 60%);
-  color: var(--muted);
+  background: linear-gradient(120deg, #4b5563 0%, #374151 52%, #2f3846 100%);
 }
 
 h1,

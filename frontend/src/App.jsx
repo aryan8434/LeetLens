@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react";
-import { updatePassword } from "firebase/auth";
 import "./App.css";
-import AuthModal from "./components/AuthModal.jsx";
-import { useAuth } from "./contexts/AuthContext.jsx";
-import { auth } from "./firebase";
-import heroImg from "./assets/hero.png";
 
 const REPORT_CACHE_KEY = "leetlensCoachReports_v2";
 
@@ -301,19 +296,7 @@ function getHeatLevel(count, maxCount) {
 }
 
 function App() {
-  const { currentUser, credits, logout } = useAuth();
   const [username, setUsername] = useState("");
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem("theme") || "dark",
-  );
-  const [menuOpen, setMenuOpen] = useState(() => {
-    if (typeof window === "undefined") {
-      return true;
-    }
-
-    return window.innerWidth > 900;
-  });
-  const [currentPage, setCurrentPage] = useState("home");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -323,20 +306,8 @@ function App() {
   const [coachSavedAt, setCoachSavedAt] = useState("");
   const [showAllTopics, setShowAllTopics] = useState(false);
   const [showReportPage, setShowReportPage] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordSaving, setPasswordSaving] = useState(false);
-  const [passwordError, setPasswordError] = useState("");
-  const [passwordSaved, setPasswordSaved] = useState("");
-  const [mockCredits, setMockCredits] = useState(0);
-  const [mockPurchaseNote, setMockPurchaseNote] = useState("");
 
   useEffect(() => {
-    // Apply theme class to document
-    document.documentElement.classList.toggle("light-theme", theme === "light");
-    localStorage.setItem("theme", theme);
-
     const targets = document.querySelectorAll(".reveal-on-scroll");
     if (!targets.length) {
       return undefined;
@@ -412,90 +383,7 @@ function App() {
     }
   };
 
-  const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
-
-  const isHomePage = currentPage === "home";
-
-  const navigate = (page) => {
-    setCurrentPage(page);
-    if (typeof window !== "undefined" && window.innerWidth <= 900) {
-      setMenuOpen(false);
-    }
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
   const formatPercent = (value) => `${value.toFixed(1)}%`;
-
-  const providerIds = currentUser?.providerData?.map((provider) => provider.providerId) || [];
-  const hasPasswordProvider = providerIds.includes("password");
-  const providerLabel = hasPasswordProvider
-    ? "Email / password"
-    : providerIds.includes("google.com")
-      ? "Google"
-      : providerIds[0] || "Firebase auth";
-  const displayName =
-    currentUser?.displayName || currentUser?.email?.split("@")[0] || "LeetLens user";
-  const memberSince = currentUser?.metadata?.creationTime
-    ? new Date(currentUser.metadata.creationTime).toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "Unknown";
-  const totalCredits = credits + mockCredits;
-
-  const mockPackages = [
-    { key: "mock_9_5", priceRs: 9, credits: 5 },
-    { key: "mock_19_15", priceRs: 19, credits: 15 },
-    { key: "mock_29_30", priceRs: 29, credits: 30 },
-  ];
-
-  const saveNewPassword = async (event) => {
-    event.preventDefault();
-    setPasswordError("");
-    setPasswordSaved("");
-
-    if (!currentUser) {
-      setPasswordError("Please sign in first.");
-      return;
-    }
-
-    if (!hasPasswordProvider) {
-      setPasswordError("Password changes are not available for this sign-in method.");
-      return;
-    }
-
-    if (!newPassword || newPassword.length < 6) {
-      setPasswordError("Password must be at least 6 characters.");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setPasswordError("Passwords do not match.");
-      return;
-    }
-
-    try {
-      setPasswordSaving(true);
-      await updatePassword(auth.currentUser, newPassword);
-      setPasswordSaved("Password updated successfully.");
-      setNewPassword("");
-      setConfirmPassword("");
-    } catch (err) {
-      setPasswordError(
-        err?.code === "auth/requires-recent-login"
-          ? "Please sign in again before changing your password."
-          : err.message || "Unable to update password.",
-      );
-    } finally {
-      setPasswordSaving(false);
-    }
-  };
-
-  const handleMockPurchase = (pack) => {
-    setMockCredits((value) => value + pack.credits);
-    setMockPurchaseNote(`Mock added ${pack.credits} credits for Rs. ${pack.priceRs}.`);
-  };
 
   const handleCoachReport = async () => {
     const trimmed = username.trim();
@@ -612,658 +500,373 @@ function App() {
   );
 
   return (
-    <div
-      className={`app-layout ${menuOpen ? "sidebar-open" : "sidebar-collapsed"}`}
-    >
-      <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
-        <div className="sidebar-top">
-          <img src="/logo.png" alt="LeetLens" className="brand-logo" />
-          <button
-            className="theme-toggle"
-            onClick={toggleTheme}
-            aria-label="Toggle theme"
-          >
-            {theme === "dark" ? "🌙" : "☀️"}
-          </button>
-        </div>
+    <main className="container">
+      <header className="brand-row">
+        <img src="/logo.png" alt="LeetLens logo" className="brand-logo" />
+        <h1 className="brand-wordmark">
+          <span className="leet">Leet</span>
+          <span className="lens">Lens</span>
+        </h1>
+      </header>
+      <p className="subtitle">
+        Track your problem solving progress and trends.
+      </p>
 
-        <nav className="sidebar-nav">
-          <button
-            className={currentPage === "home" ? "active" : ""}
-            onClick={() => navigate("home")}
-          >
-            Home
+      <section className="card analyze-card">
+        <h2>Analyze LeetCode Profile</h2>
+        <form className="analyze-form" onSubmit={handleAnalyze}>
+          <input
+            type="text"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="Paste or type your LeetCode username"
+          />
+          <button type="submit" disabled={loading}>
+            {loading ? "Analyzing..." : "Analyze"}
           </button>
-          <button
-            className={currentPage === "profile" ? "active" : ""}
-            onClick={() => navigate("profile")}
-          >
-            Profile
-          </button>
-          <button
-            className={currentPage === "credits" ? "active" : ""}
-            onClick={() => navigate("credits")}
-          >
-            Credits
-          </button>
-          <button
-            className={currentPage === "reports" ? "active" : ""}
-            onClick={() => navigate("reports")}
-          >
-            Reports
-          </button>
-          <button onClick={() => navigate("analyze")}>Analyze</button>
-        </nav>
+        </form>
+        {error ? <p className="error">{error}</p> : null}
+      </section>
 
-        <div className="sidebar-footer">
-          <small>LeetLens</small>
-        </div>
-      </aside>
-
-      <main className="container">
-        <button
-          className={`mobile-menu-btn ${menuOpen ? "open" : ""}`}
-          onClick={() => setMenuOpen((value) => !value)}
-          aria-label={menuOpen ? "Close menu" : "Open menu"}
-          aria-pressed={menuOpen}
-        >
-          {menuOpen ? (
-            <span aria-hidden="true" className="menu-close">
-              ×
-            </span>
-          ) : (
-            <span aria-hidden="true" className="menu-dots">
-              <span />
-              <span />
-              <span />
-            </span>
-          )}
-        </button>
-        {isHomePage ? (
-          <div className="hero">
-            <div>
-              <header className="brand-row-small">
-                <img
-                  src="/logo.png"
-                  alt="LeetLens logo"
-                  className="brand-logo"
-                />
-                <h1 className="brand-wordmark">
-                  <span className="leet">Leet</span>
-                  <span className="lens">Lens</span>
-                </h1>
-              </header>
-
-              <p className="subtitle">
-                Track your problem solving progress and trends.
-              </p>
-
-              <section className="card analyze-card">
-                <h2>Analyze LeetCode Profile</h2>
-                <form className="analyze-form" onSubmit={handleAnalyze}>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(event) => setUsername(event.target.value)}
-                    placeholder="Paste or type your LeetCode username"
+      {analysis ? (
+        <>
+          <section className="dashboard-grid">
+            <article className="dashboard-card solved-card reveal-on-scroll">
+              <div className="ring-wrap">
+                <svg viewBox="0 0 120 120" className="progress-ring">
+                  <circle cx="60" cy="60" r="52" className="ring-track" />
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r="52"
+                    className="ring-progress"
+                    style={{
+                      strokeDasharray: `${(ringProgress / 100) * 327} 327`,
+                    }}
                   />
-                  <button type="submit" disabled={loading}>
-                    {loading ? "Analyzing..." : "Analyze"}
-                  </button>
-                </form>
-                {error ? <p className="error">{error}</p> : null}
-              </section>
-            </div>
-
-            <div className="hero-visual">
-              <img
-                src={heroImg}
-                alt="LeetLens preview"
-                style={{ width: "100%", display: "block" }}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        {currentPage === "profile" ? (
-          <section className="card page-card profile-page">
-            <div className="profile-page-header">
-              <div>
-                <h2>Your Profile</h2>
-                <p className="page-kicker">Firebase account and identity details.</p>
-              </div>
-              <button className="action-btn" onClick={() => navigate("home")}>
-                Back Home
-              </button>
-            </div>
-
-            {currentUser ? (
-              <>
-                <div className="profile-identity">
-                  <div className="profile-avatar-wrap">
-                    {currentUser.photoURL ? (
-                      <img
-                        src={currentUser.photoURL}
-                        alt="Profile"
-                        className="profile-avatar"
-                      />
-                    ) : (
-                      <div className="profile-avatar profile-avatar-fallback">
-                        {displayName
-                          .split(" ")
-                          .map((part) => part[0])
-                          .slice(0, 2)
-                          .join("")
-                          .toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="profile-summary">
-                    <h3>{displayName}</h3>
-                    <p>{currentUser.email || "No registered email found."}</p>
-                    <div className="profile-meta-grid">
-                      <div>
-                        <span>Auth method</span>
-                        <strong>{providerLabel}</strong>
-                      </div>
-                      <div>
-                        <span>User ID</span>
-                        <strong>{currentUser.uid}</strong>
-                      </div>
-                      <div>
-                        <span>Email verified</span>
-                        <strong>{currentUser.emailVerified ? "Yes" : "No"}</strong>
-                      </div>
-                      <div>
-                        <span>Member since</span>
-                        <strong>{memberSince}</strong>
-                      </div>
-                    </div>
-                    <div className="profile-actions">
-                      <button type="button" className="action-btn" onClick={() => logout()}>
-                        Sign Out
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {hasPasswordProvider ? (
-                  <form className="profile-form password-form" onSubmit={saveNewPassword}>
-                    <h3>Change Password</h3>
-                    <p className="page-kicker">
-                      Available because this account uses email and password sign-in.
-                    </p>
-                    <label>
-                      New password
-                      <input
-                        type="password"
-                        value={newPassword}
-                        onChange={(event) => setNewPassword(event.target.value)}
-                        placeholder="Enter a new password"
-                      />
-                    </label>
-                    <label>
-                      Confirm password
-                      <input
-                        type="password"
-                        value={confirmPassword}
-                        onChange={(event) => setConfirmPassword(event.target.value)}
-                        placeholder="Repeat the password"
-                      />
-                    </label>
-                    <div className="profile-actions">
-                      <button type="submit" className="action-btn" disabled={passwordSaving}>
-                        {passwordSaving ? "Updating..." : "Update Password"}
-                      </button>
-                    </div>
-                    {passwordError ? <p className="error">{passwordError}</p> : null}
-                    {passwordSaved ? <p className="saved-note">{passwordSaved}</p> : null}
-                  </form>
-                ) : (
-                  <div className="info-panel subdued-panel">
-                    <h3>Password change unavailable</h3>
-                    <p>
-                      This account is signed in with {providerLabel}. Password changes are only shown for email/password accounts.
-                    </p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="auth-empty-state">
-                <h3>Sign in to view your profile</h3>
-                <p>
-                  Once you are signed in, this page will show your name, registered email, photo, and account details.
-                </p>
-                <button className="action-btn" onClick={() => setShowAuthModal(true)}>
-                  Sign In
-                </button>
-              </div>
-            )}
-          </section>
-        ) : null}
-
-        {currentPage === "credits" ? (
-          <section className="card page-card credits-page">
-            <div className="profile-page-header">
-              <div>
-                <h2>Credits</h2>
-                <p className="page-kicker">Track balance and try the mock top-up options.</p>
-              </div>
-              <button className="action-btn" onClick={() => navigate("home")}>
-                Back Home
-              </button>
-            </div>
-
-            {currentUser ? (
-              <>
-                <div className="credits-summary">
-                  <div>
-                    <span>Current credits</span>
-                    <strong>{totalCredits}</strong>
-                  </div>
-                  <div>
-                    <span>Mock added</span>
-                    <strong>{mockCredits}</strong>
-                  </div>
-                </div>
-
-                <div className="credits-pack-grid">
-                  {mockPackages.map((pack) => (
-                    <article className="credit-pack-card" key={pack.key}>
-                      <h3>Rs. {pack.priceRs}</h3>
-                      <p>{pack.credits} credits</p>
-                      <button
-                        type="button"
-                        className="action-btn"
-                        onClick={() => handleMockPurchase(pack)}
-                      >
-                        Mock Buy
-                      </button>
-                    </article>
-                  ))}
-                </div>
-
-                {mockPurchaseNote ? <p className="saved-note">{mockPurchaseNote}</p> : null}
-              </>
-            ) : (
-              <div className="auth-empty-state">
-                <h3>Sign in to manage credits</h3>
-                <p>
-                  After sign-in, you will see your current balance and the mock purchase options.
-                </p>
-                <button className="action-btn" onClick={() => setShowAuthModal(true)}>
-                  Sign In
-                </button>
-              </div>
-            )}
-          </section>
-        ) : null}
-
-        {currentPage !== "home" && currentPage !== "profile" && currentPage !== "credits" ? (
-          <section className="card page-card">
-            <div className="profile-page-header">
-              <div>
-                <h2>{currentPage.charAt(0).toUpperCase() + currentPage.slice(1)}</h2>
-                <p className="page-kicker">Placeholder page content.</p>
-              </div>
-              <button className="action-btn" onClick={() => navigate("home")}>
-                Back Home
-              </button>
-            </div>
-            <p className="page-copy">
-              This section can be wired to saved reports or other account tools later.
-            </p>
-          </section>
-        ) : null}
-
-        {analysis && isHomePage ? (
-          <>
-            <section className="dashboard-grid">
-              <article className="dashboard-card solved-card reveal-on-scroll">
-                <div className="ring-wrap">
-                  <svg viewBox="0 0 120 120" className="progress-ring">
-                    <circle cx="60" cy="60" r="52" className="ring-track" />
-                    <circle
-                      cx="60"
-                      cy="60"
-                      r="52"
-                      className="ring-progress"
-                      style={{
-                        strokeDasharray: `${(ringProgress / 100) * 327} 327`,
-                      }}
-                    />
-                  </svg>
-                  <div className="ring-center">
-                    <h3>
-                      {analysis.totals.solved}
-                      <span>/{analysis.totals.questions}</span>
-                    </h3>
-                    <p>Solved</p>
-                    <small>{analysis.totals.attempting} Attempting</small>
-                  </div>
-                </div>
-
-                <div className="difficulty-pills">
-                  {difficultyCards.map((item) => (
-                    <article
-                      key={item.key}
-                      className={`difficulty-pill ${item.className}`}
-                    >
-                      <h3>{item.label}</h3>
-                      <p>
-                        {item.data.solved}/{item.data.total}
-                      </p>
-                    </article>
-                  ))}
-                </div>
-              </article>
-
-              <article className="dashboard-card badge-card reveal-on-scroll">
-                <h3>Badges</h3>
-                <p className="badge-count">0</p>
-                <p className="badge-note">Locked Badge</p>
-                <h4>Apr LeetCoding Challenge</h4>
-              </article>
-
-              <article className="dashboard-card activity-card reveal-on-scroll">
-                <div className="activity-head">
+                </svg>
+                <div className="ring-center">
                   <h3>
-                    {analysis.recentActivity.last30DaysSubmissions} submissions
-                    in the past 30 days
+                    {analysis.totals.solved}
+                    <span>/{analysis.totals.questions}</span>
                   </h3>
-                  <p>
-                    Total active days:{" "}
-                    {Math.min(
-                      365,
-                      heatmapData.filter((d) => d.count > 0).length,
-                    )}
-                    <span> | Max streak: {analysis.recentActivity.streak}</span>
-                  </p>
+                  <p>Solved</p>
+                  <small>{analysis.totals.attempting} Attempting</small>
                 </div>
+              </div>
 
-                <div className="heatmap-grid year-grid">
-                  {heatmapData.map((point) => {
-                    const level = getHeatLevel(point.count, maxHeatCount);
-                    return (
-                      <span
-                        key={`year-heat-${point.date}`}
-                        className={`heat-cell level-${level}`}
-                        title={`${point.date}: ${point.count} submissions`}
-                      />
-                    );
-                  })}
-                </div>
-
-                <div className="month-ticks">
-                  {monthTicks.map((tick) => (
-                    <span
-                      key={`tick-${tick.month}-${tick.index}`}
-                      style={{
-                        left: `${(tick.index / Math.max(heatmapData.length - 1, 1)) * 100}%`,
-                      }}
-                    >
-                      {tick.month}
-                    </span>
-                  ))}
-                </div>
-              </article>
-            </section>
-
-            <section className="card topic-dark reveal-on-scroll">
-              <h2>Topic Coverage</h2>
-              <p className="topics-note">
-                Topic breakdown graph with color-coded coverage.
-              </p>
-
-              <div className="topic-graph-list">
-                {topicGraphRows.map((topic, index) => (
-                  <div key={`graph-${topic.name}`} className="topic-graph-row">
-                    <div className="topic-graph-head">
-                      <span>{topic.name}</span>
-                      <span>
-                        {topic.solved} ({formatPercent(topic.percentage)})
-                      </span>
-                    </div>
-                    <div className="topic-graph-track">
-                      <div
-                        className="topic-graph-fill"
-                        style={{
-                          width: `${Math.min(topic.percentage, 100)}%`,
-                          background: getTopicColor(index),
-                        }}
-                      />
-                    </div>
-                  </div>
+              <div className="difficulty-pills">
+                {difficultyCards.map((item) => (
+                  <article
+                    key={item.key}
+                    className={`difficulty-pill ${item.className}`}
+                  >
+                    <h3>{item.label}</h3>
+                    <p>
+                      {item.data.solved}/{item.data.total}
+                    </p>
+                  </article>
                 ))}
               </div>
+            </article>
 
-              {analysis.topics.length > 3 ? (
-                <button
-                  type="button"
-                  className="topic-toggle"
-                  onClick={() => setShowAllTopics((value) => !value)}
-                >
-                  {showAllTopics ? "Show Less" : "Expand All"}
-                </button>
-              ) : null}
-            </section>
+            <article className="dashboard-card badge-card reveal-on-scroll">
+              <h3>Badges</h3>
+              <p className="badge-count">0</p>
+              <p className="badge-note">Locked Badge</p>
+              <h4>Apr LeetCoding Challenge</h4>
+            </article>
 
-            <section className="card coach-card reveal-on-scroll">
-              <h2>AI Coach Evaluation</h2>
-              <p className="topics-note">
-                Get a hiring-oriented evaluation with strengths, weaknesses, and
-                a 7-day plan.
-              </p>
-
-              {coachSavedAt ? (
-                <p className="saved-note">
-                  Saved report available for this username.
-                </p>
-              ) : null}
-
-              <button
-                type="button"
-                className="coach-button"
-                onClick={handleCoachReport}
-                disabled={coachLoading}
-              >
-                {coachLoading
-                  ? "Generating Report..."
-                  : coachReport
-                    ? "Open Saved AI Evaluation"
-                    : "Generate AI Evaluation"}
-              </button>
-            </section>
-          </>
-        ) : null}
-
-        {showReportPage && isHomePage ? (
-          <section className="report-page">
-            <div className="report-header">
-              <h2>AI Evaluation Report</h2>
-              <button
-                type="button"
-                className="close-report"
-                onClick={() => setShowReportPage(false)}
-              >
-                Back
-              </button>
-            </div>
-
-            {coachLoading ? (
-              <div className="report-loader-wrap">
-                <div className="loader" />
-                <h3>Generating AI report...</h3>
+            <article className="dashboard-card activity-card reveal-on-scroll">
+              <div className="activity-head">
+                <h3>
+                  {analysis.recentActivity.last30DaysSubmissions} submissions in
+                  the past 30 days
+                </h3>
                 <p>
-                  Building current insights and future plans for your profile.
+                  Total active days:{" "}
+                  {Math.min(365, heatmapData.filter((d) => d.count > 0).length)}
+                  <span> | Max streak: {analysis.recentActivity.streak}</span>
                 </p>
               </div>
+
+              <div className="heatmap-grid year-grid">
+                {heatmapData.map((point) => {
+                  const level = getHeatLevel(point.count, maxHeatCount);
+                  return (
+                    <span
+                      key={`year-heat-${point.date}`}
+                      className={`heat-cell level-${level}`}
+                      title={`${point.date}: ${point.count} submissions`}
+                    />
+                  );
+                })}
+              </div>
+
+              <div className="month-ticks">
+                {monthTicks.map((tick) => (
+                  <span
+                    key={`tick-${tick.month}-${tick.index}`}
+                    style={{
+                      left: `${(tick.index / Math.max(heatmapData.length - 1, 1)) * 100}%`,
+                    }}
+                  >
+                    {tick.month}
+                  </span>
+                ))}
+              </div>
+            </article>
+          </section>
+
+          <section className="card topic-dark reveal-on-scroll">
+            <h2>Topic Coverage</h2>
+            <p className="topics-note">
+              Topic breakdown graph with color-coded coverage.
+            </p>
+
+            <div className="topic-graph-list">
+              {topicGraphRows.map((topic, index) => (
+                <div key={`graph-${topic.name}`} className="topic-graph-row">
+                  <div className="topic-graph-head">
+                    <span>{topic.name}</span>
+                    <span>
+                      {topic.solved} ({formatPercent(topic.percentage)})
+                    </span>
+                  </div>
+                  <div className="topic-graph-track">
+                    <div
+                      className="topic-graph-fill"
+                      style={{
+                        width: `${Math.min(topic.percentage, 100)}%`,
+                        background: getTopicColor(index),
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {analysis.topics.length > 3 ? (
+              <button
+                type="button"
+                className="topic-toggle"
+                onClick={() => setShowAllTopics((value) => !value)}
+              >
+                {showAllTopics ? "Show Less" : "Expand All"}
+              </button>
+            ) : null}
+          </section>
+
+          <section className="card coach-card reveal-on-scroll">
+            <h2>AI Coach Evaluation</h2>
+            <p className="topics-note">
+              Get a hiring-oriented evaluation with strengths, weaknesses, and a
+              7-day plan.
+            </p>
+
+            {coachSavedAt ? (
+              <p className="saved-note">
+                Saved report available for this username.
+              </p>
             ) : null}
 
-            {!coachLoading && coachError ? (
-              <p className="error">{coachError}</p>
-            ) : null}
+            <button
+              type="button"
+              className="coach-button"
+              onClick={handleCoachReport}
+              disabled={coachLoading}
+            >
+              {coachLoading
+                ? "Generating Report..."
+                : coachReport
+                  ? "Open Saved AI Evaluation"
+                  : "Generate AI Evaluation"}
+            </button>
+          </section>
+        </>
+      ) : null}
 
-            {!coachLoading && !coachError && reportSections.length > 0 ? (
-              <>
-                {scoreSection ? (
-                  <article className="report-score-card reveal-on-scroll">
-                    <div className="report-score-badge">
-                      <span className="score-value">{scoreValue ?? "--"}</span>
-                      <span className="score-max">/100</span>
-                    </div>
-                    <div className="report-score-copy">
-                      <h3>Overall Skill Score</h3>
-                      <p>
-                        Snapshot of your interview readiness based on topic
-                        depth, difficulty handling, and contest profile.
-                      </p>
-                    </div>
+      {showReportPage ? (
+        <section className="report-page">
+          <div className="report-header">
+            <h2>AI Evaluation Report</h2>
+            <button
+              type="button"
+              className="close-report"
+              onClick={() => setShowReportPage(false)}
+            >
+              Back
+            </button>
+          </div>
+
+          {coachLoading ? (
+            <div className="report-loader-wrap">
+              <div className="loader" />
+              <h3>Generating AI report...</h3>
+              <p>
+                Building current insights and future plans for your profile.
+              </p>
+            </div>
+          ) : null}
+
+          {!coachLoading && coachError ? (
+            <p className="error">{coachError}</p>
+          ) : null}
+
+          {!coachLoading && !coachError && reportSections.length > 0 ? (
+            <>
+              {scoreSection ? (
+                <article className="report-score-card reveal-on-scroll">
+                  <div className="report-score-badge">
+                    <span className="score-value">{scoreValue ?? "--"}</span>
+                    <span className="score-max">/100</span>
+                  </div>
+                  <div className="report-score-copy">
+                    <h3>Overall Skill Score</h3>
+                    <p>
+                      Snapshot of your interview readiness based on topic depth,
+                      difficulty handling, and contest profile.
+                    </p>
+                  </div>
+                </article>
+              ) : null}
+
+              <div className="report-priority-grid">
+                {insightsSection ? (
+                  <article className="report-section featured reveal-on-scroll">
+                    <h3 className="section-title section-title-insights">
+                      Current Insights
+                    </h3>
+                    <ul>
+                      {insightsSection.items.map((item, index) => (
+                        <li
+                          key={`insights-${index}`}
+                          style={{ "--item-index": index }}
+                        >
+                          {renderLineWithHighlights(item)}
+                        </li>
+                      ))}
+                    </ul>
                   </article>
                 ) : null}
 
-                <div className="report-priority-grid">
-                  {insightsSection ? (
-                    <article className="report-section featured reveal-on-scroll">
-                      <h3 className="section-title section-title-insights">
-                        Current Insights
-                      </h3>
+                {readinessSection ? (
+                  <article className="report-section featured readiness reveal-on-scroll">
+                    <h3 className="section-title section-title-readiness">
+                      Company Readiness (%)
+                    </h3>
+                    {(() => {
+                      const readinessRows = pairReadinessItems(
+                        readinessSection.items,
+                      );
+                      const avgReadiness = getAverageReadiness(readinessRows);
+
+                      return (
+                        <>
+                          {avgReadiness !== null ? (
+                            <div className="readiness-average">
+                              <span className="readiness-average-label">
+                                Average Readiness
+                              </span>
+                              <span className="readiness-score-pill">
+                                {avgReadiness}
+                                <small>/100</small>
+                              </span>
+                            </div>
+                          ) : null}
+
+                          <div className="section-row-list">
+                            {readinessRows.map((row, index) => {
+                              const parsed = parseReadinessHeading(row.heading);
+                              return (
+                                <article
+                                  key={`readiness-${index}`}
+                                  className="section-item-card"
+                                  style={{ "--item-index": index }}
+                                >
+                                  <div className="section-item-headline">
+                                    <p className="section-item-heading">
+                                      {renderLineWithHighlights(parsed.label)}
+                                    </p>
+                                    {parsed.score !== null ? (
+                                      <span className="readiness-score-pill">
+                                        {parsed.score}
+                                        <small>/100</small>
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {row.details ? (
+                                    <p className="section-item-details">
+                                      {renderLineWithHighlights(row.details)}
+                                    </p>
+                                  ) : null}
+                                </article>
+                              );
+                            })}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </article>
+                ) : null}
+              </div>
+
+              <div className="report-sections">
+                {remainingSections.map((section) => (
+                  <article
+                    key={section.title}
+                    className="report-section reveal-on-scroll"
+                  >
+                    <h3
+                      className={`section-title section-title-${getSectionTone(section.title)}`}
+                    >
+                      {section.title}
+                    </h3>
+                    {normalizeSectionTitle(section.title).includes(
+                      "topic breakdown",
+                    ) ? (
+                      <div className="section-row-list">
+                        {pairHeadingDetailItems(section.items).map(
+                          (row, index) => (
+                            <article
+                              key={`${section.title}-row-${index}`}
+                              className="section-item-card"
+                              style={{ "--item-index": index }}
+                            >
+                              <p className="section-item-heading">
+                                {renderLineWithHighlights(
+                                  stripTrailingColon(row.heading),
+                                )}
+                              </p>
+                              {row.details ? (
+                                <p className="section-item-details">
+                                  {renderLineWithHighlights(row.details)}
+                                </p>
+                              ) : null}
+                            </article>
+                          ),
+                        )}
+                      </div>
+                    ) : (
                       <ul>
-                        {insightsSection.items.map((item, index) => (
+                        {section.items.map((item, index) => (
                           <li
-                            key={`insights-${index}`}
+                            key={`${section.title}-${index}`}
                             style={{ "--item-index": index }}
                           >
                             {renderLineWithHighlights(item)}
                           </li>
                         ))}
                       </ul>
-                    </article>
-                  ) : null}
-
-                  {readinessSection ? (
-                    <article className="report-section featured readiness reveal-on-scroll">
-                      <h3 className="section-title section-title-readiness">
-                        Company Readiness (%)
-                      </h3>
-                      {(() => {
-                        const readinessRows = pairReadinessItems(
-                          readinessSection.items,
-                        );
-                        const avgReadiness = getAverageReadiness(readinessRows);
-
-                        return (
-                          <>
-                            {avgReadiness !== null ? (
-                              <div className="readiness-average">
-                                <span className="readiness-average-label">
-                                  Average Readiness
-                                </span>
-                                <span className="readiness-score-pill">
-                                  {avgReadiness}
-                                  <small>/100</small>
-                                </span>
-                              </div>
-                            ) : null}
-
-                            <div className="section-row-list">
-                              {readinessRows.map((row, index) => {
-                                const parsed = parseReadinessHeading(
-                                  row.heading,
-                                );
-                                return (
-                                  <article
-                                    key={`readiness-${index}`}
-                                    className="section-item-card"
-                                    style={{ "--item-index": index }}
-                                  >
-                                    <div className="section-item-headline">
-                                      <p className="section-item-heading">
-                                        {renderLineWithHighlights(parsed.label)}
-                                      </p>
-                                      {parsed.score !== null ? (
-                                        <span className="readiness-score-pill">
-                                          {parsed.score}
-                                          <small>/100</small>
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                    {row.details ? (
-                                      <p className="section-item-details">
-                                        {renderLineWithHighlights(row.details)}
-                                      </p>
-                                    ) : null}
-                                  </article>
-                                );
-                              })}
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </article>
-                  ) : null}
-                </div>
-
-                <div className="report-sections">
-                  {remainingSections.map((section) => (
-                    <article
-                      key={section.title}
-                      className="report-section reveal-on-scroll"
-                    >
-                      <h3
-                        className={`section-title section-title-${getSectionTone(section.title)}`}
-                      >
-                        {section.title}
-                      </h3>
-                      {normalizeSectionTitle(section.title).includes(
-                        "topic breakdown",
-                      ) ? (
-                        <div className="section-row-list">
-                          {pairHeadingDetailItems(section.items).map(
-                            (row, index) => (
-                              <article
-                                key={`${section.title}-row-${index}`}
-                                className="section-item-card"
-                                style={{ "--item-index": index }}
-                              >
-                                <p className="section-item-heading">
-                                  {renderLineWithHighlights(
-                                    stripTrailingColon(row.heading),
-                                  )}
-                                </p>
-                                {row.details ? (
-                                  <p className="section-item-details">
-                                    {renderLineWithHighlights(row.details)}
-                                  </p>
-                                ) : null}
-                              </article>
-                            ),
-                          )}
-                        </div>
-                      ) : (
-                        <ul>
-                          {section.items.map((item, index) => (
-                            <li
-                              key={`${section.title}-${index}`}
-                              style={{ "--item-index": index }}
-                            >
-                              {renderLineWithHighlights(item)}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </article>
-                  ))}
-                </div>
-              </>
-            ) : null}
-          </section>
-        ) : null}
-
-        {showAuthModal ? <AuthModal onClose={() => setShowAuthModal(false)} /> : null}
-      </main>
-    </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </section>
+      ) : null}
+    </main>
   );
 }
 
