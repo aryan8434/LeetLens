@@ -13,6 +13,8 @@ export default defineConfig({
     },
   },
   build: {
+    outDir: "../backend/dist",
+    emptyOutDir: true,
     target: "esnext",
     minify: "terser",
     terserOptions: {
@@ -22,8 +24,20 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ["react", "react-dom", "firebase/firestore"],
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+
+          if (
+            id.includes("react") ||
+            id.includes("react-dom") ||
+            id.includes("firebase/firestore")
+          ) {
+            return "vendor";
+          }
+
+          return "vendor";
         },
         chunkFileNames: "js/[name].[hash].js",
         entryFileNames: "js/[name].[hash].js",

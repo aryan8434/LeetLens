@@ -2,11 +2,17 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
+const fs = require("fs");
 
 dotenv.config({ path: path.join(__dirname, ".env") });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const FRONTEND_BUILD_DIR = path.join(__dirname, "dist");
+const FRONTEND_LEGACY_DIR = path.join(__dirname, "public");
+const frontendDir = fs.existsSync(path.join(FRONTEND_BUILD_DIR, "index.html"))
+  ? FRONTEND_BUILD_DIR
+  : FRONTEND_LEGACY_DIR;
 const LEETCODE_GRAPHQL = "https://leetcode.com/graphql";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
@@ -668,6 +674,17 @@ app.post("/api/coach", async (req, res) => {
   }
 });
 
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "API route not found." });
+});
+
+app.use(express.static(frontendDir));
+
+app.use((_req, res) => {
+  res.sendFile(path.join(frontendDir, "index.html"));
+});
+
 app.listen(PORT, () => {
-  console.log(`API running on http://localhost:${PORT}`);
+  console.log(`App running on http://localhost:${PORT}`);
+  console.log(`Frontend directory: ${frontendDir}`);
 });
