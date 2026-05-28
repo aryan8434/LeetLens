@@ -13,6 +13,14 @@
   gap: 0.75rem;
 }
 
+.app-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .brand-logo {
   width: 48px;
   height: 48px;
@@ -24,7 +32,7 @@
   font-size: clamp(2rem, 5vw, 3.6rem);
   font-weight: 800;
   line-height: 1;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .brand-wordmark .leet {
@@ -41,6 +49,286 @@
 .subtitle {
   margin-top: 0;
   color: #cbd5e1;
+}
+
+.account-menu {
+  position: relative;
+  z-index: 80;
+  margin-left: auto;
+}
+
+.account-trigger {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(226, 232, 240, 0.32);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.56);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.24);
+}
+
+.account-trigger span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #f8fafc;
+}
+
+.account-trigger:hover,
+.account-trigger[aria-expanded="true"] {
+  border-color: #38bdf8;
+  background: #0f172a;
+}
+
+.account-panel {
+  position: absolute;
+  top: calc(100% + 0.8rem);
+  right: 0;
+  width: min(420px, calc(100vw - 2rem));
+  max-height: calc(100vh - 6rem);
+  overflow-y: auto;
+  border: 1px solid #dbe5ef;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.32);
+  padding: 1rem;
+}
+
+.account-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.account-empty h2,
+.account-summary h2 {
+  margin: 0;
+}
+
+.account-empty p,
+.account-summary p,
+.account-note {
+  margin: 0;
+  color: #64748b;
+}
+
+.account-summary {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: center;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #0f172a 0%, #164e63 56%, #7c2d12 100%);
+  color: #f8fafc;
+  padding: 0.9rem;
+}
+
+.account-summary p {
+  color: #cbd5e1;
+  overflow-wrap: anywhere;
+}
+
+.account-avatar {
+  width: 54px;
+  height: 54px;
+  border-radius: 8px;
+  background: #f97316;
+  color: #111827;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 1.4rem;
+}
+
+.account-kicker {
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.account-form,
+.account-credits {
+  margin-top: 0.9rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.9rem;
+}
+
+.account-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.account-section-head span {
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.account-section-head strong {
+  border-radius: 999px;
+  background: #ecfeff;
+  color: #0f766e;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.72rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.account-field input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+}
+
+.account-field input:read-only {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.account-note {
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e40af;
+  padding: 0.7rem;
+  font-size: 0.88rem;
+}
+
+.account-primary,
+.account-logout {
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  padding: 0.72rem 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.account-primary {
+  margin-top: 0.75rem;
+  color: #ffffff;
+  background: linear-gradient(135deg, #0f766e, #2563eb);
+}
+
+.account-primary:disabled,
+.credit-package:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.credit-package-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.credit-package {
+  min-height: 112px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  text-align: left;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.credit-package:hover {
+  border-color: #38bdf8;
+  background: #ecfeff;
+}
+
+.credit-package span {
+  color: #64748b;
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.credit-package strong {
+  display: block;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.credit-package small {
+  color: #c2410c;
+  font-weight: 800;
+}
+
+.account-status,
+.account-error {
+  margin-top: 0.8rem;
+  border-radius: 8px;
+  padding: 0.7rem;
+  font-weight: 700;
+}
+
+.account-status {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.account-error {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.account-logout {
+  margin-top: 0.9rem;
+  background: #111827;
+  color: #f8fafc;
+}
+
+.auth-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.auth-text {
+  margin: 0;
+  color: #334155;
+}
+
+.auth-credits {
+  margin: 0;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.auth-action {
+  border: none;
+  border-radius: 0.65rem;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: #1d4ed8;
+  cursor: pointer;
 }
 
 .card {
@@ -714,7 +1002,7 @@
 
 .section-title {
   font-weight: 800;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 .section-title-insights {
@@ -955,6 +1243,17 @@
 }
 
 @media (max-width: 800px) {
+  .app-header {
+    align-items: flex-start;
+  }
+  .account-panel {
+    position: fixed;
+    top: 5rem;
+    right: 1rem;
+    left: 1rem;
+    width: auto;
+    max-height: calc(100vh - 6rem);
+  }
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -984,6 +1283,19 @@
   }
   .heatmap-grid {
     grid-template-columns: repeat(14, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .credit-package-grid {
+    grid-template-columns: 1fr;
+  }
+  .account-summary {
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+  .account-avatar {
+    width: 46px;
+    height: 46px;
   }
 }
 

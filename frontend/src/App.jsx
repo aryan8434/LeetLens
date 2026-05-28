@@ -1,13 +1,30 @@
 import { useEffect, useState } from "react";
 import "./App.css";
+import { useAuth } from "./contexts/AuthContext";
+import AuthModal from "./components/AuthModal";
+import AccountMenu from "./components/AccountMenu";
+
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? "http://localhost:5000" : "")
+).replace(/\/$/, "");
 
 const REPORT_CACHE_KEY = "leetlensCoachReports_v2";
+
+function getApiErrorMessage(data, fallback) {
+  const base = data?.error || fallback;
+  if (data?.details && data.details !== base) {
+    return `${base} (${data.details})`;
+  }
+
+  return base;
+}
 
 function loadReportCache() {
   try {
     const raw = localStorage.getItem(REPORT_CACHE_KEY);
     return raw ? JSON.parse(raw) : {};
-  } catch (_error) {
+  } catch {
     return {};
   }
 }
@@ -15,7 +32,7 @@ function loadReportCache() {
 function saveReportCache(cache) {
   try {
     localStorage.setItem(REPORT_CACHE_KEY, JSON.stringify(cache));
-  } catch (_error) {
+  } catch {
     // Ignore storage failures and continue with in-memory state.
   }
 }
@@ -267,16 +284,6 @@ function getMonthTicks(heatmap) {
   return ticks;
 }
 
-function getTopicBand(percentage) {
-  if (percentage >= 40) {
-    return "Strong";
-  }
-  if (percentage >= 20) {
-    return "Average";
-  }
-  return "Weak";
-}
-
 function getHeatLevel(count, maxCount) {
   if (count <= 0) {
     return 0;
@@ -296,6 +303,7 @@ function getHeatLevel(count, maxCount) {
 }
 
 function App() {
+  const { currentUser, credits, creditsReady, setCredits } = useAuth();
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -306,6 +314,7 @@ function App() {
   const [coachSavedAt, setCoachSavedAt] = useState("");
   const [showAllTopics, setShowAllTopics] = useState(false);
   const [showReportPage, setShowReportPage] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   useEffect(() => {
     const targets = document.querySelectorAll(".reveal-on-scroll");
@@ -343,24 +352,46 @@ function App() {
       return;
     }
 
+    if (!currentUser) {
+      setError("Please log in to use your search credits.");
+      setShowAuthModal(true);
+      return;
+    }
+
+    if (!creditsReady) {
+      setError("Loading your credits. Please try again in a moment.");
+      return;
+    }
+
+    if (Number(credits) <= 0) {
+      setError("You have no credits remaining.");
+      return;
+    }
+
     setLoading(true);
     setError("");
     setCoachError("");
 
     try {
+      const token = await currentUser.getIdToken();
       const response = await fetch(
-        `/api/analyze?username=${encodeURIComponent(trimmed)}`,
+        `${API_BASE_URL}/api/analyze?username=${encodeURIComponent(trimmed)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
       );
       const data = await response.json();
 
       if (!response.ok) {
-        const message = data.details
-          ? `${data.error || "Failed to analyze username."} (${data.details})`
-          : data.error || "Failed to analyze username.";
-        throw new Error(message);
+        throw new Error(getApiErrorMessage(data, "Failed to analyze username."));
       }
 
       setAnalysis(data);
+      if (typeof data.remainingCredits === "number") {
+        setCredits(data.remainingCredits);
+      }
       const cache = loadReportCache();
       const cacheKey = data.username.toLowerCase();
       const saved = cache[cacheKey];
@@ -392,6 +423,17 @@ function App() {
       return;
     }
 
+    if (!currentUser) {
+      setCoachError("Please log in to use your credits.");
+      setShowAuthModal(true);
+      return;
+    }
+
+    if (!creditsReady) {
+      setCoachError("Loading your credits. Please try again in a moment.");
+      return;
+    }
+
     const cacheKey = trimmed.toLowerCase();
     const cache = loadReportCache();
     const saved = cache[cacheKey];
@@ -404,6 +446,11 @@ function App() {
       return;
     }
 
+    if (Number(credits) <= 0) {
+      setCoachError("You have no credits remaining.");
+      return;
+    }
+
     setCoachLoading(true);
     setCoachError("");
     setCoachReport("");
@@ -411,20 +458,27 @@ function App() {
     setShowReportPage(true);
 
     try {
-      const response = await fetch("/api/coach", {
+      const token = await currentUser.getIdToken();
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      };
+
+      const response = await fetch(`${API_BASE_URL}/api/coach`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({ username: trimmed }),
       });
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || "Unable to generate AI report.");
+        throw new Error(getApiErrorMessage(data, "Unable to generate AI report."));
       }
 
       setCoachReport(data.report || "");
+      if (typeof data.remainingCredits === "number") {
+        setCredits(data.remainingCredits);
+      }
       const savedAt = new Date().toISOString();
       cache[cacheKey] = {
         report: data.report || "",
@@ -465,13 +519,6 @@ function App() {
       ]
     : [];
 
-  const visibleTopics = analysis
-    ? showAllTopics
-      ? analysis.topics
-      : analysis.topics.slice(0, 3)
-    : [];
-
-  const topicTableRows = analysis ? analysis.topics.slice(0, 10) : [];
   const heatmapData = analysis?.recentActivity?.dailyHeatmap || [];
   const maxHeatCount = heatmapData.reduce(
     (max, point) => Math.max(max, point.count),
@@ -501,12 +548,15 @@ function App() {
 
   return (
     <main className="container">
-      <header className="brand-row">
-        <img src="/logo.png" alt="LeetLens logo" className="brand-logo" />
-        <h1 className="brand-wordmark">
-          <span className="leet">Leet</span>
-          <span className="lens">Lens</span>
-        </h1>
+      <header className="app-header">
+        <div className="brand-row">
+          <img src="/logo.png" alt="LeetLens logo" className="brand-logo" />
+          <h1 className="brand-wordmark">
+            <span className="leet">Leet</span>
+            <span className="lens">Lens</span>
+          </h1>
+        </div>
+        <AccountMenu onLogin={() => setShowAuthModal(true)} />
       </header>
       <p className="subtitle">
         Track your problem solving progress and trends.
@@ -865,6 +915,10 @@ function App() {
             </>
           ) : null}
         </section>
+      ) : null}
+
+      {showAuthModal ? (
+        <AuthModal onClose={() => setShowAuthModal(false)} />
       ) : null}
     </main>
   );

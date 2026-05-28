@@ -15,8 +15,8 @@ dotenv.config({ path: path.join(__dirname, ".env") });
 
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
-const FRONTEND_BUILD_DIR = path.join(__dirname, "build");
 const FRONTEND_DIST_DIR = path.join(__dirname, "dist");
+const FRONTEND_BUILD_DIR = path.join(__dirname, "build");
 const LEGACY_PUBLIC_DIR = path.join(__dirname, "public");
 const LEETCODE_GRAPHQL = "https://leetcode.com/graphql";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -25,9 +25,10 @@ const REGISTERED_USERS_COLLECTION = "registered_users";
 const FIRESTORE_USER_SEARCH_COLLECTION = "user_searches";
 const DEFAULT_USER_CREDITS = 3;
 const CREDIT_PACKAGES = {
-  "50_rs9": { credits: 50, priceRs: 9 },
-  "150_rs19": { credits: 150, priceRs: 19 },
-  "400_rs29": { credits: 400, priceRs: 29 },
+  "10_rs19": { credits: 10, priceRs: 19 },
+  "20_rs29": { credits: 20, priceRs: 29 },
+  "50_rs49": { credits: 50, priceRs: 49 },
+  "100_rs79": { credits: 100, priceRs: 79 },
 };
 
 app.set("trust proxy", true);
@@ -124,25 +125,6 @@ async function verifyFirebaseToken(req, res, next) {
   }
 }
 
-async function optionalFirebaseToken(req, res, next) {
-  if (!isAuthSystemReady()) {
-    return next();
-  }
-
-  const token = getBearerToken(req);
-  if (!token) {
-    return next();
-  }
-
-  try {
-    const decoded = await admin.auth().verifyIdToken(token);
-    req.authUser = decoded;
-    return next();
-  } catch (_error) {
-    return next();
-  }
-}
-
 function getUserRef(uid) {
   return firestoreDb.collection(REGISTERED_USERS_COLLECTION).doc(uid);
 }
@@ -151,16 +133,108 @@ function toDocSafeId(value) {
   return value.toString().trim().replaceAll("/", "_") || "unknown";
 }
 
+function normalizeIp(ip) {
+  const raw = (ip || "").toString().trim();
+  if (!raw) {
+    return "unknown";
+  }
+
+  return raw.replace(/^::ffff:/, "");
+}
+
+function getDateFolderUtc(now = new Date()) {
+  return now.toISOString().slice(0, 10);
+}
+
+function detectDeviceType(userAgent) {
+  const ua = (userAgent || "").toLowerCase();
+  if (!ua) {
+    return "desktop";
+  }
+
+  if (/tablet|ipad/.test(ua)) {
+    return "tablet";
+  }
+
+  if (/mobile|android|iphone/.test(ua)) {
+    return "mobile";
+  }
+
+  return "desktop";
+}
+
+function getDeviceInfoFromRequest(req) {
+  const userAgent = (req.headers["user-agent"] || "").toString();
+  const ua = userAgent.toLowerCase();
+
+  let os = "Unknown";
+  if (ua.includes("windows")) {
+    os = "Windows";
+  } else if (ua.includes("android")) {
+    os = "Android";
+  } else if (
+    ua.includes("iphone") ||
+    ua.includes("ipad") ||
+    ua.includes("ios")
+  ) {
+    os = "iOS";
+  } else if (ua.includes("mac os") || ua.includes("macintosh")) {
+    os = "macOS";
+  } else if (ua.includes("linux")) {
+    os = "Linux";
+  }
+
+  let browser = "Unknown";
+  if (ua.includes("edg/")) {
+    browser = "Edge";
+  } else if (ua.includes("chrome/")) {
+    browser = "Chrome";
+  } else if (ua.includes("safari/") && !ua.includes("chrome/")) {
+    browser = "Safari";
+  } else if (ua.includes("firefox/")) {
+    browser = "Firefox";
+  }
+
+  return {
+    vendor: "Unknown",
+    model: "Unknown",
+    type: detectDeviceType(userAgent),
+    os,
+    browser,
+  };
+}
+
+function hasPayloadKey(input, key) {
+  return Object.prototype.hasOwnProperty.call(input, key);
+}
+
 function sanitizeProfilePayload(payload) {
   const input = payload || {};
-  return {
-    name: (input.name || "").toString().trim().slice(0, 80),
-    age: Number.isFinite(Number(input.age))
+  const updates = {};
+
+  if (hasPayloadKey(input, "name")) {
+    updates.name = (input.name || "").toString().trim().slice(0, 80);
+  }
+
+  if (hasPayloadKey(input, "dob")) {
+    updates.dob = (input.dob || "").toString().trim().slice(0, 10);
+  }
+
+  if (hasPayloadKey(input, "age")) {
+    updates.age = Number.isFinite(Number(input.age))
       ? Math.max(0, Math.min(120, Number(input.age)))
-      : 0,
-    location: (input.location || "").toString().trim().slice(0, 120),
-    bio: (input.bio || "").toString().trim().slice(0, 500),
-  };
+      : 0;
+  }
+
+  if (hasPayloadKey(input, "location")) {
+    updates.location = (input.location || "").toString().trim().slice(0, 120);
+  }
+
+  if (hasPayloadKey(input, "bio")) {
+    updates.bio = (input.bio || "").toString().trim().slice(0, 500);
+  }
+
+  return updates;
 }
 
 function toPublicUserProfile(uid, data, authUser) {
@@ -169,6 +243,7 @@ function toPublicUserProfile(uid, data, authUser) {
     name: data.name || authUser?.name || "",
     email: data.email || authUser?.email || "",
     age: Number(data.age || 0),
+    dob: data.dob || "",
     location: data.location || "",
     bio: data.bio || "",
     ipAddress: data.ipAddress || "",
@@ -185,6 +260,7 @@ async function ensureUserDocument(authUser, req) {
     email: authUser.email || "",
     name: authUser.name || "",
     age: 0,
+    dob: "",
     location: "",
     bio: "",
     ipAddress: req ? getClientIp(req) : "",
@@ -198,7 +274,17 @@ async function ensureUserDocument(authUser, req) {
       createdAt: now,
     });
   } else {
-    await ref.set(baseData, { merge: true });
+    const updates = {
+      email: authUser.email || snap.data()?.email || "",
+      ipAddress: req ? getClientIp(req) : snap.data()?.ipAddress || "",
+      updatedAt: now,
+    };
+
+    if (!snap.data()?.name && authUser.name) {
+      updates.name = authUser.name;
+    }
+
+    await ref.set(updates, { merge: true });
   }
 
   const latest = await ref.get();
@@ -231,6 +317,19 @@ async function consumeOneCredit(uid) {
 
     return nextCredits;
   });
+}
+
+async function requireAvailableCredit(uid) {
+  const snap = await getUserRef(uid).get();
+  const credits = Number(snap.data()?.credits || 0);
+
+  if (credits <= 0) {
+    const noCreditsError = new Error("You have no credits remaining.");
+    noCreditsError.status = 402;
+    throw noCreditsError;
+  }
+
+  return credits;
 }
 
 async function addCreditsForPackage(uid, packageKey) {
@@ -271,12 +370,33 @@ async function addCreditsForPackage(uid, packageKey) {
   });
 }
 
-async function logSearchInFirestore({ username }) {
+async function logSearchInFirestore({ username, req }) {
   if (!firestoreDb || !admin) {
     return;
   }
 
   const now = admin.firestore.FieldValue.serverTimestamp();
+
+  const ipAddress = normalizeIp(req ? getClientIp(req) : "");
+  const visitorId = toDocSafeId(ipAddress);
+  const dayFolder = getDateFolderUtc();
+  const deviceInfo = req
+    ? getDeviceInfoFromRequest(req)
+    : {
+        vendor: "Unknown",
+        model: "Unknown",
+        type: "desktop",
+        os: "Unknown",
+        browser: "Unknown",
+      };
+
+  const dailyVisitorRef = firestoreDb
+    .collection(FIRESTORE_USER_SEARCH_COLLECTION)
+    .doc(dayFolder)
+    .collection("visitors")
+    .doc(visitorId);
+  const dailySearchRef = dailyVisitorRef.collection("searches").doc();
+
   const usernameDocId = toDocSafeId(username.toLowerCase());
   const userSearchRef = firestoreDb
     .collection(FIRESTORE_USER_SEARCH_COLLECTION)
@@ -284,6 +404,22 @@ async function logSearchInFirestore({ username }) {
   const userSearchEventRef = userSearchRef.collection("searches").doc();
 
   const batch = firestoreDb.batch();
+  batch.set(
+    dailyVisitorRef,
+    {
+      visitor_id: visitorId,
+      ip: ipAddress,
+      device: deviceInfo,
+      searchCount: admin.firestore.FieldValue.increment(1),
+      last_visited_at: now,
+      first_visited_at: now,
+    },
+    { merge: true },
+  );
+  batch.set(dailySearchRef, {
+    username,
+    timestamp: now,
+  });
   batch.set(
     userSearchRef,
     {
@@ -617,12 +753,10 @@ app.post("/api/auth/sync", verifyFirebaseToken, async (req, res) => {
     const user = toPublicUserProfile(req.authUser.uid, userDoc, req.authUser);
     return res.json({ credits: Number(userDoc.credits || 0), user });
   } catch (error) {
-    return res
-      .status(500)
-      .json({
-        error: "Unable to sync authenticated user.",
-        details: error.message,
-      });
+    return res.status(500).json({
+      error: "Unable to sync authenticated user.",
+      details: error.message,
+    });
   }
 });
 
@@ -696,49 +830,49 @@ app.post("/api/credits/purchase", verifyFirebaseToken, async (req, res) => {
   }
 });
 
-app.get("/api/analyze", async (req, res) => {
+app.get("/api/analyze", verifyFirebaseToken, async (req, res) => {
   const username = (req.query.username || "").toString().trim();
   if (!username) {
     return res.status(400).json({ error: "Username is required." });
   }
 
   try {
+    await ensureUserDocument(req.authUser, req);
+    await requireAvailableCredit(req.authUser.uid);
+
     const analysis = await buildAnalysisData(username);
+    const remainingCredits = await consumeOneCredit(req.authUser.uid);
+
     try {
-      await logSearchInFirestore({ username: analysis.username });
+      await logSearchInFirestore({ username: analysis.username, req });
     } catch (logError) {
       console.error("Failed to log search in Firestore:", logError.message);
     }
 
-    return res.json(analysis);
+    return res.json({ ...analysis, remainingCredits });
   } catch (error) {
     const status = error.status || 500;
     return res.status(status).json({
       error:
         status === 404
           ? "LeetCode username not found."
-          : "Unexpected error while analyzing username.",
+          : status === 402
+            ? "You have no credits remaining."
+            : "Unexpected error while analyzing username.",
       details: error.message,
     });
   }
 });
 
-app.post("/api/coach", optionalFirebaseToken, async (req, res) => {
+app.post("/api/coach", verifyFirebaseToken, async (req, res) => {
   const username = (req.body?.username || "").toString().trim();
   if (!username) {
     return res.status(400).json({ error: "Username is required." });
   }
 
   try {
-    if (req.authUser) {
-      await ensureUserDocument(req.authUser, req);
-      const userRef = getUserRef(req.authUser.uid);
-      const snap = await userRef.get();
-      const credits = Number(snap.data()?.credits || 0);
-      if (credits <= 0) {
-        return res.status(402).json({ error: "You have no credits remaining." });
-      }
-    }
+    await ensureUserDocument(req.authUser, req);
+    await requireAvailableCredit(req.authUser.uid);
 
     const analysis = await buildAnalysisData(username);
     const prompt = buildCoachPrompt(analysis);
@@ -780,10 +914,7 @@ app.post("/api/coach", optionalFirebaseToken, async (req, res) => {
         .json({ error: "Groq returned an empty response." });
     }
 
-    let remainingCredits = 0;
-    if (req.authUser) {
-      remainingCredits = await consumeOneCredit(req.authUser.uid);
-    }
+    const remainingCredits = await consumeOneCredit(req.authUser.uid);
 
     return res.json({
       username: analysis.username,
@@ -806,10 +937,10 @@ app.post("/api/coach", optionalFirebaseToken, async (req, res) => {
   }
 });
 
-const frontendDir = fs.existsSync(path.join(FRONTEND_BUILD_DIR, "index.html"))
-  ? FRONTEND_BUILD_DIR
-  : fs.existsSync(path.join(FRONTEND_DIST_DIR, "index.html"))
-    ? FRONTEND_DIST_DIR
+const frontendDir = fs.existsSync(path.join(FRONTEND_DIST_DIR, "index.html"))
+  ? FRONTEND_DIST_DIR
+  : fs.existsSync(path.join(FRONTEND_BUILD_DIR, "index.html"))
+    ? FRONTEND_BUILD_DIR
     : LEGACY_PUBLIC_DIR;
 
 app.use("/api", (_req, res) => {
