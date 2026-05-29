@@ -878,11 +878,9 @@ app.get("/api/analyze", optionalVerifyFirebaseToken, async (req, res) => {
 
   try {
     if (req.authUser) {
-      await ensureUserDocument(req.authUser, req);
-      await requireAvailableCredit(req.authUser.uid);
-
+      const userDoc = await ensureUserDocument(req.authUser, req);
       const analysis = await buildAnalysisData(username);
-      const remainingCredits = await consumeOneCredit(req.authUser.uid);
+      const remainingCredits = Number(userDoc.credits || 0);
 
       try {
         await logSearchInFirestore({ username: analysis.username, req });
@@ -902,9 +900,7 @@ app.get("/api/analyze", optionalVerifyFirebaseToken, async (req, res) => {
       error:
         status === 404
           ? "LeetCode username not found."
-          : status === 402
-            ? "You have no credits remaining."
-            : "Unexpected error while analyzing username.",
+          : "Unexpected error while analyzing username.",
       details: error.message,
     });
   }
@@ -1021,4 +1017,4 @@ app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Frontend directory: ${frontendDir}`);
 });
-// Trigger nodemon restart 4
+// Trigger nodemon restart 5

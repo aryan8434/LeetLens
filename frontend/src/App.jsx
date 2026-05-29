@@ -360,17 +360,6 @@ function App() {
       return;
     }
 
-    if (currentUser) {
-      if (!creditsReady) {
-        setError("Loading your credits. Please try again in a moment.");
-        return;
-      }
-
-      if (Number(credits) <= 0) {
-        setError("You have no credits remaining.");
-        return;
-      }
-    }
 
     setLoading(true);
     setError("");
@@ -798,7 +787,7 @@ function App() {
               {scoreSection ? (
                 <article className="report-score-card reveal-on-scroll">
                   <div className="report-score-badge">
-                    <span className="score-value">{scoreValue ?? "--"}</span>
+                    <span className="score-value">{currentUser ? (scoreValue ?? "--") : "XX"}</span>
                     <span className="score-max">/100</span>
                   </div>
                   <div className="report-score-copy">
@@ -813,35 +802,71 @@ function App() {
 
               {!currentUser ? (
                 <div className="report-unlock-cta reveal-on-scroll">
-                  <h3>Unlock Your Full Evaluation</h3>
-                  <p>Get instant access to your company readiness scores, deep-dive topic coverage, strengths, weaknesses, and a custom 7-day preparation plan.</p>
+                  <h3>Unlock Your Coding Score & Full Report</h3>
+                  <p>To get your coding score and full AI report, sign in.</p>
                   <button type="button" className="unlock-btn" onClick={() => setShowAuthModal(true)}>
                     Sign In to Unlock Full Report
                   </button>
                 </div>
               ) : null}
 
-              <div className={`report-priority-grid ${!currentUser ? "blurred-gate" : ""}`}>
+              <div className="report-priority-grid">
                 {insightsSection ? (
                   <article className="report-section featured reveal-on-scroll">
                     <h3 className="section-title section-title-insights">
                       Current Insights
                     </h3>
                     <ul>
-                      {insightsSection.items.map((item, index) => (
-                        <li
-                          key={`insights-${index}`}
-                          style={{ "--item-index": index }}
-                        >
-                          {renderLineWithHighlights(item)}
-                        </li>
-                      ))}
+                      {insightsSection.items.map((item, index) => {
+                        if (!currentUser) {
+                          if (index === 0) {
+                            return (
+                              <li
+                                key={`insights-${index}`}
+                                style={{ "--item-index": index }}
+                              >
+                                {renderLineWithHighlights(item)}
+                              </li>
+                            );
+                          } else if (index === 1) {
+                            const halfLength = Math.ceil(item.length / 2);
+                            const firstHalf = item.substring(0, halfLength);
+                            return (
+                              <li
+                                key={`insights-${index}`}
+                                style={{ "--item-index": index }}
+                              >
+                                {renderLineWithHighlights(firstHalf)}...
+                              </li>
+                            );
+                          } else {
+                            return (
+                              <li
+                                key={`insights-${index}`}
+                                className="blurred-gate"
+                                style={{ "--item-index": index }}
+                              >
+                                {renderLineWithHighlights(item)}
+                              </li>
+                            );
+                          }
+                        } else {
+                          return (
+                            <li
+                              key={`insights-${index}`}
+                              style={{ "--item-index": index }}
+                            >
+                              {renderLineWithHighlights(item)}
+                            </li>
+                          );
+                        }
+                      })}
                     </ul>
                   </article>
                 ) : null}
 
                 {readinessSection ? (
-                  <article className="report-section featured readiness reveal-on-scroll">
+                  <article className={`report-section featured readiness reveal-on-scroll ${!currentUser ? "blurred-gate" : ""}`}>
                     <h3 className="section-title section-title-readiness">
                       Company Readiness (%)
                     </h3>
