@@ -834,25 +834,56 @@
   font-size: 0.82rem;
 }
 
-.coach-button {
+.coach-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
   margin-top: 0.9rem;
+}
+
+.coach-button {
   border: none;
   border-radius: 0.65rem;
-  padding: 0.75rem 1.1rem;
+  padding: 0.75rem 1.3rem;
   font-weight: 700;
   color: #ffffff;
-  background: linear-gradient(180deg, #0f75c8, #0048a8);
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
   cursor: pointer;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.coach-button:hover:not(:disabled) {
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 18px rgba(2, 132, 199, 0.4);
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+}
+
+.coach-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.coach-button-secondary {
+  background: linear-gradient(135deg, #ff6a00 0%, #ff8533 100%);
+  box-shadow: 0 4px 12px rgba(255, 106, 0, 0.25);
+}
+
+.coach-button-secondary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ff8533 0%, #ff9e59 100%);
+  box-shadow: 0 6px 18px rgba(255, 106, 0, 0.4);
 }
 
 .saved-note {
   margin-top: 0.6rem;
-  color: #0f766e;
+  color: #5eead4;
   font-weight: 600;
 }
 
 .coach-button:disabled {
-  opacity: 0.75;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
@@ -1982,5 +2013,74 @@
   padding: 0.9rem 1.1rem;
   line-height: 1.5;
   margin-top: 0.5rem;
+}
+
+/* Blurred Gate & Unlock CTA for Unauthenticated Users */
+.blurred-gate {
+  filter: blur(8px);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.45;
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+.report-unlock-cta {
+  max-width: 600px;
+  margin: 3rem auto 1.5rem;
+  padding: 2.2rem;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%);
+  border: 1px solid rgba(255, 106, 0, 0.3);
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  position: relative;
+  z-index: 50;
+  animation: popoverFadeIn 0.3s ease-out forwards;
+}
+
+.report-unlock-cta h3 {
+  margin: 0 0 0.8rem;
+  font-size: 1.6rem;
+  font-weight: 800;
+  background: linear-gradient(90deg, #ff6a00 0%, #ff8533 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.report-unlock-cta p {
+  margin: 0 0 1.6rem;
+  color: #cbd5e1;
+  font-size: 0.96rem;
+  line-height: 1.55;
+}
+
+.report-unlock-cta .unlock-btn {
+  background: linear-gradient(135deg, #ff6a00 0%, #ff8533 100%);
+  border: none;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0.75rem 2.2rem;
+  border-radius: 25px;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(255, 106, 0, 0.3);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.report-unlock-cta .unlock-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 22px rgba(255, 106, 0, 0.5);
+  background: linear-gradient(135deg, #ff8533 0%, #ff9e59 100%);
+}
+
+.report-unlock-cta .unlock-btn:active {
+  transform: translateY(0);
 }
 

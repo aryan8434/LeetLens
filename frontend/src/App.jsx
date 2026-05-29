@@ -360,20 +360,16 @@ function App() {
       return;
     }
 
-    if (!currentUser) {
-      setError("Please log in to use your search credits.");
-      setShowAuthModal(true);
-      return;
-    }
+    if (currentUser) {
+      if (!creditsReady) {
+        setError("Loading your credits. Please try again in a moment.");
+        return;
+      }
 
-    if (!creditsReady) {
-      setError("Loading your credits. Please try again in a moment.");
-      return;
-    }
-
-    if (Number(credits) <= 0) {
-      setError("You have no credits remaining.");
-      return;
+      if (Number(credits) <= 0) {
+        setError("You have no credits remaining.");
+        return;
+      }
     }
 
     setLoading(true);
@@ -381,14 +377,15 @@ function App() {
     setCoachError("");
 
     try {
-      const token = await currentUser.getIdToken();
+      const token = currentUser ? await currentUser.getIdToken() : null;
+      const headers = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
       const response = await fetch(
         `${API_BASE_URL}/api/analyze?username=${encodeURIComponent(trimmed)}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
+        { headers },
       );
       const data = await response.json();
 
@@ -424,21 +421,10 @@ function App() {
 
   const formatPercent = (value) => `${value.toFixed(1)}%`;
 
-  const handleCoachReport = async () => {
+  const handleCoachReport = async (forceNew = false) => {
     const trimmed = username.trim();
     if (!trimmed) {
       setCoachError("Please enter a username first.");
-      return;
-    }
-
-    if (!currentUser) {
-      setCoachError("Please log in to use your credits.");
-      setShowAuthModal(true);
-      return;
-    }
-
-    if (!creditsReady) {
-      setCoachError("Loading your credits. Please try again in a moment.");
       return;
     }
 
@@ -446,17 +432,33 @@ function App() {
     const cache = loadReportCache();
     const saved = cache[cacheKey];
 
-    if (saved?.report) {
-      setCoachError("");
-      setCoachReport(saved.report);
-      setCoachSavedAt(saved.savedAt || "");
-      setShowReportPage(true);
-      return;
-    }
+    if (currentUser) {
+      if (!creditsReady) {
+        setCoachError("Loading your credits. Please try again in a moment.");
+        return;
+      }
 
-    if (Number(credits) <= 0) {
-      setCoachError("You have no credits remaining.");
-      return;
+      if (!forceNew && saved?.report) {
+        setCoachError("");
+        setCoachReport(saved.report);
+        setCoachSavedAt(saved.savedAt || "");
+        setShowReportPage(true);
+        return;
+      }
+
+      if (Number(credits) <= 0) {
+        setCoachError("You have no credits remaining.");
+        return;
+      }
+    } else {
+      // Unauthenticated / Anonymous check: load from cache if available
+      if (saved?.report) {
+        setCoachError("");
+        setCoachReport(saved.report);
+        setCoachSavedAt(saved.savedAt || "");
+        setShowReportPage(true);
+        return;
+      }
     }
 
     setCoachLoading(true);
@@ -466,11 +468,13 @@ function App() {
     setShowReportPage(true);
 
     try {
-      const token = await currentUser.getIdToken();
+      const token = currentUser ? await currentUser.getIdToken() : null;
       const headers = {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
       };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
 
       const response = await fetch(`${API_BASE_URL}/api/coach`, {
         method: "POST",
@@ -733,18 +737,31 @@ function App() {
               </p>
             ) : null}
 
-            <button
-              type="button"
-              className="coach-button"
-              onClick={handleCoachReport}
-              disabled={coachLoading}
-            >
-              {coachLoading
-                ? "Generating Report..."
-                : coachReport
-                  ? "Open Saved AI Evaluation"
-                  : "Generate AI Evaluation"}
-            </button>
+            <div className="coach-actions">
+              <button
+                type="button"
+                className="coach-button"
+                onClick={() => handleCoachReport(false)}
+                disabled={coachLoading}
+              >
+                {coachLoading
+                  ? "Generating Report..."
+                  : coachReport
+                    ? "Open Saved AI Evaluation"
+                    : "Generate AI Evaluation"}
+              </button>
+
+              {coachReport ? (
+                <button
+                  type="button"
+                  className="coach-button coach-button-secondary"
+                  onClick={() => handleCoachReport(true)}
+                  disabled={coachLoading}
+                >
+                  {coachLoading ? "Generating..." : "Generate New AI Report"}
+                </button>
+              ) : null}
+            </div>
           </section>
         </>
       ) : null}
@@ -794,7 +811,17 @@ function App() {
                 </article>
               ) : null}
 
-              <div className="report-priority-grid">
+              {!currentUser ? (
+                <div className="report-unlock-cta reveal-on-scroll">
+                  <h3>Unlock Your Full Evaluation</h3>
+                  <p>Get instant access to your company readiness scores, deep-dive topic coverage, strengths, weaknesses, and a custom 7-day preparation plan.</p>
+                  <button type="button" className="unlock-btn" onClick={() => setShowAuthModal(true)}>
+                    Sign In to Unlock Full Report
+                  </button>
+                </div>
+              ) : null}
+
+              <div className={`report-priority-grid ${!currentUser ? "blurred-gate" : ""}`}>
                 {insightsSection ? (
                   <article className="report-section featured reveal-on-scroll">
                     <h3 className="section-title section-title-insights">
@@ -874,7 +901,7 @@ function App() {
                 ) : null}
               </div>
 
-              <div className="report-sections">
+              <div className={`report-sections ${!currentUser ? "blurred-gate" : ""}`}>
                 {remainingSections.map((section) => (
                   <article
                     key={section.title}

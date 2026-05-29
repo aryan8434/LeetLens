@@ -142,6 +142,29 @@ async function verifyFirebaseToken(req, res, next) {
   }
 }
 
+async function optionalVerifyFirebaseToken(req, res, next) {
+  if (!isAuthSystemReady()) {
+    req.authUser = null;
+    return next();
+  }
+
+  const token = getBearerToken(req);
+  if (!token) {
+    req.authUser = null;
+    return next();
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.authUser = decoded;
+    return next();
+  } catch (_error) {
+    console.warn("Optional Firebase token verification failed:", _error.message);
+    req.authUser = null;
+    return next();
+  }
+}
+
 function getUserRef(uid) {
   return firestoreDb.collection(REGISTERED_USERS_COLLECTION).doc(uid);
 }
@@ -847,26 +870,32 @@ app.post("/api/credits/purchase", verifyFirebaseToken, async (req, res) => {
   }
 });
 
-app.get("/api/analyze", verifyFirebaseToken, async (req, res) => {
+app.get("/api/analyze", optionalVerifyFirebaseToken, async (req, res) => {
   const username = (req.query.username || "").toString().trim();
   if (!username) {
     return res.status(400).json({ error: "Username is required." });
   }
 
   try {
-    await ensureUserDocument(req.authUser, req);
-    await requireAvailableCredit(req.authUser.uid);
+    if (req.authUser) {
+      await ensureUserDocument(req.authUser, req);
+      await requireAvailableCredit(req.authUser.uid);
 
-    const analysis = await buildAnalysisData(username);
-    const remainingCredits = await consumeOneCredit(req.authUser.uid);
+      const analysis = await buildAnalysisData(username);
+      const remainingCredits = await consumeOneCredit(req.authUser.uid);
 
-    try {
-      await logSearchInFirestore({ username: analysis.username, req });
-    } catch (logError) {
-      console.error("Failed to log search in Firestore:", logError.message);
+      try {
+        await logSearchInFirestore({ username: analysis.username, req });
+      } catch (logError) {
+        console.error("Failed to log search in Firestore:", logError.message);
+      }
+
+      return res.json({ ...analysis, remainingCredits });
+    } else {
+      // Unauthenticated / Anonymous search
+      const analysis = await buildAnalysisData(username);
+      return res.json({ ...analysis, remainingCredits: null });
     }
-
-    return res.json({ ...analysis, remainingCredits });
   } catch (error) {
     const status = error.status || 500;
     return res.status(status).json({
@@ -881,15 +910,17 @@ app.get("/api/analyze", verifyFirebaseToken, async (req, res) => {
   }
 });
 
-app.post("/api/coach", verifyFirebaseToken, async (req, res) => {
+app.post("/api/coach", optionalVerifyFirebaseToken, async (req, res) => {
   const username = (req.body?.username || "").toString().trim();
   if (!username) {
     return res.status(400).json({ error: "Username is required." });
   }
 
   try {
-    await ensureUserDocument(req.authUser, req);
-    await requireAvailableCredit(req.authUser.uid);
+    if (req.authUser) {
+      await ensureUserDocument(req.authUser, req);
+      await requireAvailableCredit(req.authUser.uid);
+    }
 
     const analysis = await buildAnalysisData(username);
     const prompt = buildCoachPrompt(analysis);
@@ -931,7 +962,10 @@ app.post("/api/coach", verifyFirebaseToken, async (req, res) => {
         .json({ error: "Groq returned an empty response." });
     }
 
-    const remainingCredits = await consumeOneCredit(req.authUser.uid);
+    let remainingCredits = null;
+    if (req.authUser) {
+      remainingCredits = await consumeOneCredit(req.authUser.uid);
+    }
 
     return res.json({
       username: analysis.username,
@@ -987,4 +1021,4 @@ app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Frontend directory: ${frontendDir}`);
 });
-// Trigger nodemon restart 3
+// Trigger nodemon restart 4
