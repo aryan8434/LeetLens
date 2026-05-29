@@ -6,16 +6,22 @@ export default defineConfig({
   plugins: [react()],
   build: {
     target: "esnext",
-    minify: "terser",
-    terserOptions: {
-      compress: {
-        drop_console: true,
-      },
-    },
+    minify: "esbuild",
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ["react", "react-dom", "firebase/firestore", "lucide-react"],
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+          if (
+            id.includes("react") ||
+            id.includes("react-dom") ||
+            id.includes("firebase/firestore") ||
+            id.includes("lucide-react")
+          ) {
+            return "vendor";
+          }
+          return "vendor";
         },
         chunkFileNames: "js/[name].[hash].js",
         entryFileNames: "js/[name].[hash].js",

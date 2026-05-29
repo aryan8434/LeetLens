@@ -13,6 +13,7 @@ import {
   signOut,
   GoogleAuthProvider,
   signInWithPopup,
+  updatePassword,
 } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "../firebase";
@@ -49,7 +50,10 @@ export function AuthProvider({ children }) {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to sync user credits.");
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(
+          `${errData.error || "Failed to sync user credits."} (Details: ${errData.details || "none"})`
+        );
       }
 
       const data = await response.json();
@@ -170,6 +174,10 @@ export function AuthProvider({ children }) {
         return signInWithPopup(auth, provider);
       },
       signOut: () => signOut(auth),
+      changePassword: (newPassword) => {
+        if (!auth.currentUser) throw new Error("No user logged in.");
+        return updatePassword(auth.currentUser, newPassword);
+      },
     }),
     [currentUser, credits, creditsReady, userProfile],
   );

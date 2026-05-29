@@ -1957,3 +1957,30 @@
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
+
+/* Profile Security & Password Editor Styling */
+.profile-section-divider {
+  border: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 2rem 0;
+}
+
+.profile-security-section h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 1rem;
+}
+
+.profile-security-note {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+  line-height: 1.5;
+  margin-top: 0.5rem;
+}
+

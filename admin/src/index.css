@@ -374,3 +374,13 @@ tr.table-row:hover {
   font-size: 0.8rem;
   color: var(--text-secondary);
 }
+
+.action-btn.delete-btn {
+  color: #f87171;
+}
+
+.action-btn.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+

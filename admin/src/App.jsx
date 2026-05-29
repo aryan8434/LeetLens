@@ -20,6 +20,7 @@ import {
   getCountFromServer,
   doc,
   updateDoc,
+  deleteDoc,
 } from "firebase/firestore";
 
 export default function App() {
@@ -298,11 +299,11 @@ export default function App() {
                         >
                           {visitor.searchesList?.length} Searches
                           <ChevronRight
-                            size={16}
-                            style={{
-                              transform: isExpanded ? "rotate(90deg)" : "none",
-                              transition: "transform 0.2s",
-                            }}
+                             size={16}
+                             style={{
+                               transform: isExpanded ? "rotate(90deg)" : "none",
+                               transition: "transform 0.2s",
+                             }}
                           />
                         </button>
                       </td>
@@ -375,13 +376,14 @@ export default function App() {
               <th>Credits</th>
               <th>IP Address</th>
               <th>Created At</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {registeredUsers.length === 0 && (
               <tr>
                 <td
-                  colSpan="5"
+                  colSpan="6"
                   style={{
                     textAlign: "center",
                     color: "var(--text-secondary)",
@@ -467,6 +469,15 @@ export default function App() {
                         dateVal.toLocaleTimeString()
                       : "--"}
                   </td>
+                  <td>
+                    <button
+                      className="action-btn delete-btn"
+                      onClick={() => deleteUser(user.id)}
+                      disabled={updateLoading}
+                    >
+                      Delete
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -501,6 +512,26 @@ export default function App() {
     } catch (err) {
       console.error("Failed to update credits:", err);
       alert("Failed to update credits. See console for details.");
+    } finally {
+      setUpdateLoading(false);
+    }
+  };
+
+  const deleteUser = async (userId) => {
+    if (!window.confirm("Are you sure you want to delete this user's records from the database? This action cannot be undone.")) {
+      return;
+    }
+
+    setUpdateLoading(true);
+    try {
+      await deleteDoc(doc(db, "registered_users", userId));
+
+      // Update local state
+      setRegisteredUsers((prev) => prev.filter((u) => u.id !== userId));
+      alert("User deleted successfully from database!");
+    } catch (err) {
+      console.error("Failed to delete user:", err);
+      alert("Failed to delete user: " + err.message);
     } finally {
       setUpdateLoading(false);
     }

@@ -72,7 +72,9 @@ function initFirestore() {
           "Example:\n" +
           "FIREBASE_SERVICE_ACCOUNT_JSON={\\\"type\\\": \\\"service_account\\\", \\\"project_id\\\": \\\"leetlens\\\", ...}\n"
         );
-        admin.initializeApp();
+        admin.initializeApp({
+          projectId: "leetlens",
+        });
       }
     }
 
@@ -132,7 +134,11 @@ async function verifyFirebaseToken(req, res, next) {
     req.authUser = decoded;
     return next();
   } catch (_error) {
-    return res.status(401).json({ error: "Invalid authentication token." });
+    console.error("Firebase token verification failed:", _error.message);
+    return res.status(401).json({
+      error: "Invalid authentication token.",
+      details: _error.message,
+    });
   }
 }
 
@@ -981,3 +987,4 @@ app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Frontend directory: ${frontendDir}`);
 });
+// Trigger nodemon restart 3
