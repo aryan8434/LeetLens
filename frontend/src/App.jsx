@@ -3,6 +3,7 @@ import "./App.css";
 import { useAuth } from "./contexts/AuthContext";
 import AuthModal from "./components/AuthModal";
 import AccountMenu from "./components/AccountMenu";
+import ProfilePage from "./components/ProfilePage";
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
@@ -315,6 +316,13 @@ function App() {
   const [showAllTopics, setShowAllTopics] = useState(false);
   const [showReportPage, setShowReportPage] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [view, setView] = useState("home"); // "home" or "profile"
+
+  useEffect(() => {
+    if (!currentUser) {
+      setView("home");
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     const targets = document.querySelectorAll(".reveal-on-scroll");
@@ -556,11 +564,16 @@ function App() {
             <span className="lens">Lens</span>
           </h1>
         </div>
-        <AccountMenu onLogin={() => setShowAuthModal(true)} />
+        <AccountMenu onLogin={() => setShowAuthModal(true)} onProfileClick={() => setView("profile")} />
       </header>
-      <p className="subtitle">
-        Track your problem solving progress and trends.
-      </p>
+
+      {view === "profile" ? (
+        <ProfilePage onBack={() => setView("home")} />
+      ) : (
+        <>
+          <p className="subtitle">
+            Track your problem solving progress and trends.
+          </p>
 
       <section className="card analyze-card">
         <h2>Analyze LeetCode Profile</h2>
@@ -916,6 +929,8 @@ function App() {
           ) : null}
         </section>
       ) : null}
+        </>
+      )}
 
       {showAuthModal ? (
         <AuthModal onClose={() => setShowAuthModal(false)} />

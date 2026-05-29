@@ -678,7 +678,20 @@ app.use("/api", (_req, res) => {
   res.status(404).json({ error: "API route not found." });
 });
 
-app.use(express.static(frontendDir));
+app.use(
+  express.static(frontendDir, {
+    etag: false,
+    maxAge: 0,
+    setHeaders: (res, filePath) => {
+      res.setHeader(
+        "Cache-Control",
+        "no-cache, no-store, must-revalidate",
+      );
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    },
+  }),
+);
 
 app.use((_req, res) => {
   res.sendFile(path.join(frontendDir, "index.html"));

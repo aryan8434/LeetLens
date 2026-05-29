@@ -53,6 +53,7 @@ function parseServiceAccountFromEnv() {
 
 function initFirestore() {
   if (!admin) {
+    console.warn("Firebase Admin SDK is not installed or failed to import.");
     return null;
   }
 
@@ -63,14 +64,24 @@ function initFirestore() {
         admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
         });
+        console.log("Firebase Admin SDK initialized successfully using FIREBASE_SERVICE_ACCOUNT_JSON.");
       } else {
+        console.warn(
+          "\n[Firebase Warning] FIREBASE_SERVICE_ACCOUNT_JSON environment variable is not set.\n" +
+          "If you are running the server locally, you MUST add your service account credentials to backend/.env in order to connect to Firestore.\n" +
+          "Example:\n" +
+          "FIREBASE_SERVICE_ACCOUNT_JSON={\\\"type\\\": \\\"service_account\\\", \\\"project_id\\\": \\\"leetlens\\\", ...}\n"
+        );
         admin.initializeApp();
       }
     }
 
-    return admin.firestore();
+    const dbInstance = admin.firestore();
+    console.log("Firestore database connection established successfully.");
+    return dbInstance;
   } catch (error) {
-    console.error("Firestore initialization failed:", error.message);
+    console.error("\n[Firebase Error] Firestore initialization failed:", error.message);
+    console.error("Please check your service account configuration in backend/.env.\n");
     return null;
   }
 }
@@ -947,7 +958,20 @@ app.use("/api", (_req, res) => {
   res.status(404).json({ error: "API route not found." });
 });
 
-app.use(express.static(frontendDir));
+app.use(
+  express.static(frontendDir, {
+    etag: false,
+    maxAge: 0,
+    setHeaders: (res, filePath) => {
+      res.setHeader(
+        "Cache-Control",
+        "no-cache, no-store, must-revalidate",
+      );
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    },
+  }),
+);
 
 app.use((_req, res) => {
   res.sendFile(path.join(frontendDir, "index.html"));

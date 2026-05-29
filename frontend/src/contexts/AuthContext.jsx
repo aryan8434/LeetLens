@@ -11,6 +11,8 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
+  GoogleAuthProvider,
+  signInWithPopup,
 } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "../firebase";
@@ -25,6 +27,7 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [credits, setCredits] = useState(0);
   const [creditsReady, setCreditsReady] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
   const unsubscribeRef = useRef(null);
 
   const stopListening = () => {
@@ -53,9 +56,39 @@ export function AuthProvider({ children }) {
       if (typeof data.credits === "number") {
         setCredits(data.credits);
       }
+      if (data.user) {
+        setUserProfile(data.user);
+      }
     } catch (error) {
       console.error("Credit sync failed:", error);
     }
+  };
+
+  const updateProfileData = async (updates) => {
+    if (!currentUser) return;
+    const token = await currentUser.getIdToken();
+    const response = await fetch(`${API_BASE_URL}/api/profile`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(updates),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error || "Failed to update profile.");
+    }
+
+    const data = await response.json();
+    if (typeof data.credits === "number") {
+      setCredits(data.credits);
+    }
+    if (data.user) {
+      setUserProfile(data.user);
+    }
+    return data.user;
   };
 
   useEffect(() => {
@@ -66,6 +99,7 @@ export function AuthProvider({ children }) {
 
       if (!user) {
         setCredits(0);
+        setUserProfile(null);
         setCreditsReady(true);
         return;
       }
@@ -82,8 +116,28 @@ export function AuthProvider({ children }) {
         doc(db, "registered_users", user.uid),
         (snapshot) => {
           if (snapshot.exists()) {
-            const snapshotCredits = Number(snapshot.data()?.credits || 0);
+            const data = snapshot.data();
+            const snapshotCredits = Number(data?.credits || 0);
             setCredits(Number.isFinite(snapshotCredits) ? snapshotCredits : 0);
+            setUserProfile({
+              uid: user.uid,
+              name: data?.name || user.displayName || user.email?.split("@")[0] || "",
+              email: data?.email || user.email || "",
+              dob: data?.dob || "",
+              age: data?.age || 0,
+              location: data?.location || "",
+              bio: data?.bio || "",
+            });
+          } else {
+            setUserProfile({
+              uid: user.uid,
+              name: user.displayName || user.email?.split("@")[0] || "",
+              email: user.email || "",
+              dob: "",
+              age: 0,
+              location: "",
+              bio: "",
+            });
           }
           setCreditsReady(true);
         },
@@ -105,13 +159,19 @@ export function AuthProvider({ children }) {
       credits,
       setCredits,
       creditsReady,
+      userProfile,
+      updateProfileData,
       signIn: (email, password) =>
         signInWithEmailAndPassword(auth, email, password),
       signUp: (email, password) =>
         createUserWithEmailAndPassword(auth, email, password),
+      signInWithGoogle: () => {
+        const provider = new GoogleAuthProvider();
+        return signInWithPopup(auth, provider);
+      },
       signOut: () => signOut(auth),
     }),
-    [currentUser, credits, creditsReady],
+    [currentUser, credits, creditsReady, userProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
