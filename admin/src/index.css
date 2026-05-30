@@ -384,3 +384,295 @@ tr.table-row:hover {
   color: #ef4444;
 }
 
+/* ==========================================================================
+   User Details Page Styling
+   ========================================================================== */
+.user-details-grid {
+  display: grid;
+  grid-template-columns: 350px 1fr;
+  gap: 24px;
+  align-items: start;
+  margin-top: 24px;
+}
+
+@media (max-width: 900px) {
+  .user-details-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.detail-sidebar-card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-history-card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  min-height: 500px;
+}
+
+.profile-info-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.profile-info-group h3,
+.credits-edit-section h3,
+.danger-zone-section h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: white;
+  margin: 0 0 12px 0;
+  letter-spacing: 0.5px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 8px;
+}
+
+.info-item:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.info-value {
+  font-size: 0.95rem;
+  color: white;
+  word-break: break-all;
+}
+
+.info-value.accent-text {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.info-value.bio-text {
+  white-space: pre-wrap;
+  font-style: italic;
+  color: #cbd5e1;
+}
+
+.code-font {
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.detail-divider {
+  border: 0;
+  height: 1px;
+  background: var(--border-light);
+  margin: 20px 0;
+}
+
+.credits-edit-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.credits-edit-row input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: white;
+  padding: 8px 12px;
+  font-size: 1rem;
+}
+
+.credits-edit-row input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.danger-desc {
+  font-size: 0.82rem;
+  color: #f87171;
+  margin: 0 0 12px 0;
+  line-height: 1.4;
+}
+
+.loading-wrapper-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  color: var(--text-secondary);
+}
+
+.history-split-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+@media (max-width: 1200px) {
+  .history-split-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.history-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-column h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 6px;
+}
+
+.history-list-wrap {
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.empty-text {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 16px 0;
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.activity-log-item {
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.activity-log-item:hover {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.log-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+  font-size: 0.95rem;
+}
+
+.log-main svg {
+  color: var(--accent);
+}
+
+.view-report-link-btn {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: auto;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.view-report-link-btn:hover {
+  background: var(--accent);
+  color: var(--bg-dark);
+}
+
+.log-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* ==========================================================================
+   Admin Report Modal Styles
+   ========================================================================== */
+.admin-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  z-index: 2000;
+  padding: 20px;
+}
+
+.admin-modal-card {
+  width: min(800px, 100%);
+  max-height: 80vh;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 24px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+}
+
+.admin-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.admin-modal-close:hover {
+  color: white;
+}
+
+.admin-report-text-scroll {
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.admin-report-text {
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: #e2e8f0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  margin: 0;
+}
+

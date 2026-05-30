@@ -4,6 +4,7 @@ import { useAuth } from "./contexts/AuthContext";
 import AuthModal from "./components/AuthModal";
 import AccountMenu from "./components/AccountMenu";
 import ProfilePage from "./components/ProfilePage";
+import EvaluationHistory from "./components/EvaluationHistory";
 import CreditsPage from "./components/CreditsPage";
 
 const API_BASE_URL = (
@@ -12,6 +13,7 @@ const API_BASE_URL = (
 ).replace(/\/$/, "");
 
 const REPORT_CACHE_KEY = "leetlensCoachReports_v2";
+const RECENT_SEARCHES_KEY = "leetlensRecentSearches_v1";
 
 function getApiErrorMessage(data, fallback) {
   const base = data?.error || fallback;
@@ -39,6 +41,78 @@ function saveReportCache(cache) {
   }
 }
 
+function getRecentSearchesKey(user) {
+  return user?.uid ? `${RECENT_SEARCHES_KEY}_${user.uid}` : RECENT_SEARCHES_KEY;
+}
+
+function loadRecentSearches(storageKey) {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentSearches(storageKey, searches) {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(searches));
+  } catch {
+    // Ignore storage failures and continue with in-memory state.
+  }
+}
+
+function normalizeSearchValue(value) {
+  return value.trim().toLowerCase();
+}
+
+function buildRecentSearchEntry(username) {
+  return {
+    username,
+    normalized: normalizeSearchValue(username),
+    searchedAt: new Date().toISOString(),
+  };
+}
+
+function updateRecentSearches(searches, username) {
+  const normalized = normalizeSearchValue(username);
+  const next = [
+    buildRecentSearchEntry(username),
+    ...searches.filter((item) => item?.normalized !== normalized),
+  ];
+
+  return next.slice(0, 3);
+}
+
+async function fetchRecentSearchesFromServer(user) {
+  if (!user) {
+    return [];
+  }
+
+  const token = await user.getIdToken();
+  const response = await fetch(`${API_BASE_URL}/api/search-history`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const data = await response.json();
+  return Array.isArray(data)
+    ? data
+        .map((item) => ({
+          username: item.username,
+          normalized: normalizeSearchValue(item.username || ""),
+          searchedAt: item.timestamp || new Date().toISOString(),
+        }))
+        .filter((item) => item.username)
+    : [];
+}
+
 function parseReportSections(reportText) {
   if (!reportText) {
     return [];
@@ -53,10 +127,66 @@ function parseReportSections(reportText) {
   let current = null;
 
   lines.forEach((line) => {
-    const headingMatch = line.match(/^\d+\.\s+\*{0,2}(.+?)\*{0,2}:?$/);
-    if (headingMatch) {
+    // 1. Clean leading list symbols, markdown hashes, space, and asterisks/underscores
+    let clean = line.trim();
+    while (true) {
+      const next = clean.replace(/^[-*+•#\s]+/, "").trim();
+      if (next === clean) break;
+      clean = next;
+    }
+    clean = clean
+      .replace(/^[*_]+/, "")
+      .replace(/[*_]+$/, "")
+      .trim();
+
+    // 2. Check if clean matches "Section X: Title" or similar patterns
+    // Matches "Section X: Name" or "Section X - Name" or "Section X. Name" or "Section X"
+    const headingMatch = clean.match(
+      /^(?:Section\s+\d+\s*[:-]\s*|\d+[\.\)]\s+)?(.+)$/i,
+    );
+
+    // We want to make sure it's actually a section heading.
+    // If it explicitly says "Section \d+", or starts with a markdown header in the original line,
+    // or if the title contains known section keywords:
+    const keywords = [
+      "insight",
+      "score",
+      "readiness",
+      "breakdown",
+      "weakness",
+      "plan",
+      "verdict",
+      "eta",
+      "faang",
+    ];
+    const isExplicitSection = /Section\s+\d+/i.test(clean);
+    const startsWithHash = /^#+\s+/.test(line.trim());
+    const isKeywordHeader =
+      keywords.some((keyword) => clean.toLowerCase().includes(keyword)) &&
+      clean.length < 50;
+
+    // Check if it's a data line (e.g. "FAANG: 70/100" or "Overall Score: 82/100")
+    const tempClean = clean
+      .replace(/^(?:Section\s+\d+\s*[:-]\s*|\d+[\.\)]\s+)/i, "")
+      .trim();
+    const isDataLine = /:\s*\d+/.test(tempClean);
+
+    const isHeading =
+      (isExplicitSection || startsWithHash || isKeywordHeader) && !isDataLine;
+
+    if (isHeading && headingMatch) {
+      let title = headingMatch[1]
+        .replace(/^[*_]+/, "")
+        .replace(/[*_]+$/, "")
+        .trim();
+
+      // If title is just a number or empty, fallback to the clean line
+      if (!title || /^\d+$/.test(title)) {
+        title = clean;
+      }
+
       current = {
-        title: headingMatch[1],
+        title: title,
         items: [],
       };
       sections.push(current);
@@ -71,7 +201,7 @@ function parseReportSections(reportText) {
       sections.push(current);
     }
 
-    current.items.push(line.replace(/^[-*]\s*/, ""));
+    current.items.push(line.replace(/^[-*•]\s*/, ""));
   });
 
   return sections;
@@ -132,50 +262,133 @@ function getSectionTone(title) {
 }
 
 function renderLineWithHighlights(line) {
-  const tokens = line.split(
-    /(Hard|hard|Medium|medium|Easy|easy|FAANG|Product-based|Service-based|strong|Strong|weak|Weak|\d+(?:\.\d+)?%)/,
-  );
+  if (typeof line !== "string") return line;
 
-  return tokens.map((token, index) => {
-    if (/^FAANG$/.test(token)) {
+  const parts = line.split(/\*\*([^*]+)\*\*/g);
+
+  return parts.map((part, index) => {
+    const isBold = index % 2 === 1;
+
+    const tokens = part.split(
+      /(Hard|hard|Medium|medium|Easy|easy|FAANG|Product-based|Service-based|strong|Strong|weak|Weak|\d+(?:\.\d+)?%)/,
+    );
+
+    const renderedTokens = tokens.map((token, tIdx) => {
+      if (/^FAANG$/.test(token)) {
+        return (
+          <span
+            key={`faang-${tIdx}`}
+            className="token-faang-custom"
+            aria-label="FAANG"
+          >
+            <span className="faang-f">F</span>
+            <span className="faang-a1">A</span>
+            <span className="faang-a2">A</span>
+            <span className="faang-n">N</span>
+            <span className="faang-g">G</span>
+          </span>
+        );
+      }
+
+      let className = "token-default";
+      if (/^Hard$|^hard$/.test(token)) {
+        className = "token-hard";
+      } else if (/^Medium$|^medium$/.test(token)) {
+        className = "token-medium";
+      } else if (/^Easy$|^easy$/.test(token)) {
+        className = "token-easy";
+      } else if (/^Product-based$/.test(token)) {
+        className = "token-product";
+      } else if (/^Service-based$/.test(token)) {
+        className = "token-service";
+      } else if (/^strong$|^Strong$/.test(token)) {
+        className = "token-strong";
+      } else if (/^weak$|^Weak$/.test(token)) {
+        className = "token-weak";
+      } else if (/^\d+(?:\.\d+)?%$/.test(token)) {
+        className = "token-percent";
+      }
+
       return (
-        <span
-          key={`${token}-${index}`}
-          className="token-faang-custom"
-          aria-label="FAANG"
-        >
-          <span className="faang-f">F</span>
-          <span className="faang-a1">A</span>
-          <span className="faang-a2">A</span>
-          <span className="faang-n">N</span>
-          <span className="faang-g">G</span>
+        <span key={`token-${tIdx}`} className={className}>
+          {token}
         </span>
+      );
+    });
+
+    if (isBold) {
+      return (
+        <strong key={`bold-${index}`} className="bold-highlight">
+          {renderedTokens}
+        </strong>
       );
     }
 
-    let className = "token-default";
-    if (/^Hard$|^hard$/.test(token)) {
-      className = "token-hard";
-    } else if (/^Medium$|^medium$/.test(token)) {
-      className = "token-medium";
-    } else if (/^Easy$|^easy$/.test(token)) {
-      className = "token-easy";
-    } else if (/^Product-based$/.test(token)) {
-      className = "token-product";
-    } else if (/^Service-based$/.test(token)) {
-      className = "token-service";
-    } else if (/^strong$|^Strong$/.test(token)) {
-      className = "token-strong";
-    } else if (/^weak$|^Weak$/.test(token)) {
-      className = "token-weak";
-    } else if (/^\d+(?:\.\d+)?%$/.test(token)) {
-      className = "token-percent";
+    return <span key={`normal-${index}`}>{renderedTokens}</span>;
+  });
+}
+
+function renderMarkdownLines(text) {
+  if (!text) return null;
+  const lines = text.split("\n");
+  return lines.map((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return <div key={index} style={{ height: "0.5rem" }} />;
+    }
+
+    // Headers
+    if (trimmed.startsWith("###")) {
+      return (
+        <h4 key={index} className="md-h4">
+          {renderLineWithHighlights(trimmed.replace(/^###\s*/, ""))}
+        </h4>
+      );
+    }
+    if (trimmed.startsWith("##")) {
+      return (
+        <h3 key={index} className="md-h3">
+          {renderLineWithHighlights(trimmed.replace(/^##\s*/, ""))}
+        </h3>
+      );
+    }
+    if (trimmed.startsWith("#")) {
+      return (
+        <h2 key={index} className="md-h2">
+          {renderLineWithHighlights(trimmed.replace(/^#\s*/, ""))}
+        </h2>
+      );
+    }
+
+    // Unordered list items
+    if (trimmed.startsWith("-") || trimmed.startsWith("*")) {
+      return (
+        <div key={index} className="md-bullet-item">
+          <span className="bullet-dot">•</span>
+          <span className="bullet-text">
+            {renderLineWithHighlights(trimmed.replace(/^[-*]\s*/, ""))}
+          </span>
+        </div>
+      );
+    }
+
+    // Numbered list items
+    const numListMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+    if (numListMatch) {
+      return (
+        <div key={index} className="md-num-item">
+          <span className="num-prefix">{numListMatch[1]}.</span>
+          <span className="num-text">
+            {renderLineWithHighlights(numListMatch[2])}
+          </span>
+        </div>
+      );
     }
 
     return (
-      <span key={`${token}-${index}`} className={className}>
-        {token}
-      </span>
+      <p key={index} className="md-para">
+        {renderLineWithHighlights(line)}
+      </p>
     );
   });
 }
@@ -304,8 +517,258 @@ function getHeatLevel(count, maxCount) {
   return 1;
 }
 
+function StandaloneDetailPage() {
+  const { currentUser } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [unlocking, setUnlocking] = useState(false);
+  const [error, setError] = useState("");
+  const [report, setReport] = useState(null);
+
+  const params = new URLSearchParams(window.location.search);
+  const reportId = params.get("id");
+  const type = params.get("type");
+  const month = params.get("month");
+
+  useEffect(() => {
+    async function loadAndMaybeUnlock() {
+      if (!currentUser || !reportId) return;
+      try {
+        setLoading(true);
+        const token = await currentUser.getIdToken();
+
+        // 1. Fetch current report details
+        const response = await fetch(
+          `${API_BASE_URL}/api/reports/${reportId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to load report detail.");
+        }
+
+        // 2. Check if the section needs unlocking
+        let needsUnlock = false;
+        let unlockUrl = "";
+        let unlockBody = null;
+
+        if (type === "topics" && !data.details?.topicBreakdown) {
+          needsUnlock = true;
+          unlockUrl = `${API_BASE_URL}/api/reports/${reportId}/unlock-topics`;
+        } else if (type === "weaknesses" && !data.details?.weaknessAnalysis) {
+          needsUnlock = true;
+          unlockUrl = `${API_BASE_URL}/api/reports/${reportId}/unlock-weaknesses`;
+        } else if (type === "roadmap") {
+          const monthKey = `month${month}`;
+          if (!data.details?.sixMonthPlan?.[monthKey]) {
+            needsUnlock = true;
+            unlockUrl = `${API_BASE_URL}/api/reports/${reportId}/unlock-month`;
+            unlockBody = JSON.stringify({ month: Number(month) });
+          }
+        }
+
+        if (needsUnlock) {
+          setUnlocking(true);
+          const unlockResp = await fetch(unlockUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: unlockBody,
+          });
+          const unlockData = await unlockResp.json();
+          if (!unlockResp.ok) {
+            throw new Error(
+              unlockData.error ||
+                "Failed to unlock detailed analysis (likely insufficient credits).",
+            );
+          }
+          data.details = unlockData.details;
+          localStorage.setItem(
+            "leetlens_report_unlocked",
+            JSON.stringify({
+              reportId: reportId,
+              timestamp: Date.now(),
+            }),
+          );
+        }
+
+        setReport(data);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+        setUnlocking(false);
+      }
+    }
+
+    if (currentUser && reportId) {
+      loadAndMaybeUnlock();
+    } else if (reportId) {
+      const timer = setTimeout(() => {
+        if (!currentUser) {
+          setError("Please log in to view this detailed report.");
+          setLoading(false);
+        }
+      }, 3000);
+      return () => clearTimeout(timer);
+    } else {
+      setError("No report ID provided.");
+      setLoading(false);
+    }
+  }, [currentUser, reportId, type, month]);
+
+  if (loading) {
+    return (
+      <div className="standalone-page loading-state">
+        <div className="report-loader-wrap">
+          <div className="loader" />
+          <h3>
+            {unlocking
+              ? "Generating Custom Analysis..."
+              : "Loading Report Details..."}
+          </h3>
+          <p>
+            {unlocking
+              ? "This might take a moment as our AI coach evaluates your profile. Deducting 1 credit."
+              : "Verifying authentication and fetching data."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="standalone-page error-state">
+        <nav className="standalone-navbar">
+          <div className="standalone-brand">
+            <h1 className="standalone-title">LeetLens Report Detail</h1>
+          </div>
+          <button className="btn-close" onClick={() => window.close()}>
+            Close Page
+          </button>
+        </nav>
+        <div className="standalone-container">
+          <p
+            className="error"
+            style={{ margin: 0, textAlign: "center", fontSize: "1.2rem" }}
+          >
+            {error}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  let title = "Detailed Report";
+  let content = "";
+
+  if (type === "topics") {
+    title = "Deep Topic Coverage Analysis";
+    content = report?.details?.topicBreakdown;
+  } else if (type === "weaknesses") {
+    title = "Deep Weakness Analysis";
+    content = report?.details?.weaknessAnalysis;
+  } else if (type === "roadmap") {
+    title = `Month ${month} Preparation Curriculum`;
+    content = report?.details?.sixMonthPlan?.[`month${month}`];
+  }
+
+  if (!content) {
+    return (
+      <div className="standalone-page error-state">
+        <nav className="standalone-navbar">
+          <div className="standalone-brand">
+            <h1 className="standalone-title">LeetLens Report Detail</h1>
+          </div>
+          <button className="btn-close" onClick={() => window.close()}>
+            Close Page
+          </button>
+        </nav>
+        <div className="standalone-container">
+          <p
+            className="error"
+            style={{ margin: 0, textAlign: "center", fontSize: "1.2rem" }}
+          >
+            This section is either not unlocked yet or does not exist.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const genDateStr = report?.timestamp
+    ? new Date(report.timestamp).toLocaleString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "Date Unknown";
+
+  return (
+    <div className="standalone-page">
+      <nav className="standalone-navbar">
+        <div className="standalone-brand">
+          <img
+            src="/logo.png"
+            alt="LeetLens logo"
+            className="standalone-logo"
+            style={{ height: "32px", width: "auto" }}
+          />
+          <h1 className="standalone-title">
+            <span style={{ color: "#ff6a00" }}>Leet</span>
+            <span style={{ color: "#38bdf8" }}>Lens</span>
+          </h1>
+        </div>
+        <div className="standalone-meta">
+          <h2>@{report.username}'s AI Report</h2>
+          <p>Generated on {genDateStr}</p>
+        </div>
+        <div className="standalone-actions">
+          <button className="btn-print" onClick={() => window.print()}>
+            Print / Save PDF
+          </button>
+          <button className="btn-close" onClick={() => window.close()}>
+            Close Page
+          </button>
+        </div>
+      </nav>
+      <main className="standalone-container">
+        <header
+          className="standalone-content-header"
+          style={{
+            marginBottom: "2rem",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            paddingBottom: "1.5rem",
+          }}
+        >
+          <h1 style={{ fontSize: "2rem", margin: 0, color: "#f8fafc" }}>
+            {title}
+          </h1>
+        </header>
+        <article className="standalone-markdown">
+          {renderMarkdownLines(content)}
+        </article>
+      </main>
+    </div>
+  );
+}
+
 function App() {
   const { currentUser, credits, creditsReady, setCredits } = useAuth();
+
+  const isStandalone = window.location.pathname === "/report-detail";
+  if (isStandalone) {
+    return <StandaloneDetailPage />;
+  }
+
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -317,8 +780,309 @@ function App() {
   const [showAllTopics, setShowAllTopics] = useState(false);
   const [showReportPage, setShowReportPage] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [view, setView] = useState("home"); // "home" or "profile"
+  const [view, setView] = useState("home"); // "home" or "profile" or "history"
   const [showZeroCreditsModal, setShowZeroCreditsModal] = useState(false);
+
+  // Unlocks & History states
+  const [currentReportId, setCurrentReportId] = useState(null);
+  const [unlockedDetails, setUnlockedDetails] = useState({
+    topicBreakdown: null,
+    weaknessAnalysis: null,
+    sixMonthPlan: {
+      month1: null,
+      month2: null,
+      month3: null,
+      month4: null,
+      month5: null,
+      month6: null,
+    },
+  });
+  const [historyReports, setHistoryReports] = useState([]);
+  const [recentSearches, setRecentSearches] = useState([]);
+  const [activeMonthTab, setActiveMonthTab] = useState(1);
+  const recentSearchStorageKey = getRecentSearchesKey(currentUser);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setRecentSearches(loadRecentSearches(recentSearchStorageKey));
+
+    if (!currentUser) {
+      return undefined;
+    }
+
+    fetchRecentSearchesFromServer(currentUser)
+      .then((remoteSearches) => {
+        if (!cancelled && remoteSearches.length > 0) {
+          setRecentSearches(remoteSearches);
+          saveRecentSearches(recentSearchStorageKey, remoteSearches);
+        }
+      })
+      .catch(() => {
+        // Keep the local cache as a fallback.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [recentSearchStorageKey]);
+
+  const persistRecentSearches = (nextSearches) => {
+    setRecentSearches(nextSearches);
+    saveRecentSearches(recentSearchStorageKey, nextSearches);
+  };
+
+  const fetchReportHistory = async () => {
+    if (!currentUser) {
+      setHistoryReports([]);
+      return;
+    }
+    try {
+      const token = await currentUser.getIdToken();
+      const response = await fetch(`${API_BASE_URL}/api/reports/history`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setHistoryReports(data);
+
+        // Synchronize unlockedDetails if the selected report is in the new list
+        if (currentReportId) {
+          const currentRep = data.find((r) => r.id === currentReportId);
+          if (currentRep) {
+            setUnlockedDetails(
+              currentRep.details || {
+                topicBreakdown: null,
+                weaknessAnalysis: null,
+                sixMonthPlan: {
+                  month1: null,
+                  month2: null,
+                  month3: null,
+                  month4: null,
+                  month5: null,
+                  month6: null,
+                },
+              },
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch report history:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchReportHistory();
+
+    const handleFocus = () => {
+      fetchReportHistory();
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [currentUser, currentReportId]);
+
+  // Restore active report on refresh/load
+  useEffect(() => {
+    const savedActiveId = localStorage.getItem("leetlens_active_report_id");
+    if (savedActiveId && historyReports.length > 0) {
+      const rep = historyReports.find((r) => r.id === savedActiveId);
+      if (rep && !currentReportId) {
+        loadHistoryReport(rep);
+      }
+    }
+  }, [historyReports, currentReportId]);
+
+  // Sync unlocks via storage event across tabs
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === "leetlens_report_unlocked") {
+        fetchReportHistory();
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [currentUser]);
+
+  const loadHistoryReport = (rep) => {
+    setCoachError("");
+    setCoachReport(rep.report);
+    setCurrentReportId(rep.id);
+    setUnlockedDetails(
+      rep.details || {
+        topicBreakdown: null,
+        weaknessAnalysis: null,
+        sixMonthPlan: {
+          month1: null,
+          month2: null,
+          month3: null,
+          month4: null,
+          month5: null,
+          month6: null,
+        },
+      },
+    );
+    setCoachSavedAt(rep.timestamp);
+    setUsername(rep.username);
+
+    const plan = rep.details?.sixMonthPlan || {};
+    const firstUnlockedMonth = [1, 2, 3, 4, 5, 6].find(
+      (m) => !!plan[`month${m}`],
+    );
+    setActiveMonthTab(firstUnlockedMonth || 1);
+
+    setShowReportPage(true);
+  };
+
+  const handleUnlockTopics = async () => {
+    if (!currentReportId || !currentUser) return;
+    if (Number(credits) <= 0) {
+      setShowZeroCreditsModal(true);
+      return;
+    }
+    setCoachLoading(true);
+    try {
+      const token = await currentUser.getIdToken();
+      const response = await fetch(
+        `${API_BASE_URL}/api/reports/${currentReportId}/unlock-topics`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Failed to unlock detailed topic breakdown.",
+        );
+      }
+      setUnlockedDetails(data.details);
+      if (typeof data.remainingCredits === "number") {
+        setCredits(data.remainingCredits);
+      }
+      fetchReportHistory();
+      window.open(`/report-detail?id=${currentReportId}&type=topics`, "_blank");
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setCoachLoading(false);
+    }
+  };
+
+  const handleUnlockWeaknesses = async () => {
+    if (!currentReportId || !currentUser) return;
+    if (Number(credits) <= 0) {
+      setShowZeroCreditsModal(true);
+      return;
+    }
+    setCoachLoading(true);
+    try {
+      const token = await currentUser.getIdToken();
+      const response = await fetch(
+        `${API_BASE_URL}/api/reports/${currentReportId}/unlock-weaknesses`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to unlock detailed weaknesses.");
+      }
+      setUnlockedDetails(data.details);
+      if (typeof data.remainingCredits === "number") {
+        setCredits(data.remainingCredits);
+      }
+      fetchReportHistory();
+      window.open(
+        `/report-detail?id=${currentReportId}&type=weaknesses`,
+        "_blank",
+      );
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setCoachLoading(false);
+    }
+  };
+
+  const handleUnlockMonth = async (monthNum) => {
+    if (!currentReportId || !currentUser) return;
+    if (Number(credits) <= 0) {
+      setShowZeroCreditsModal(true);
+      return;
+    }
+    setCoachLoading(true);
+    try {
+      const token = await currentUser.getIdToken();
+      const response = await fetch(
+        `${API_BASE_URL}/api/reports/${currentReportId}/unlock-month`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ month: monthNum }),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          data.error || `Failed to unlock Month ${monthNum} plan.`,
+        );
+      }
+      setUnlockedDetails(data.details);
+      setActiveMonthTab(monthNum);
+      if (typeof data.remainingCredits === "number") {
+        setCredits(data.remainingCredits);
+      }
+      fetchReportHistory();
+      window.open(
+        `/report-detail?id=${currentReportId}&type=roadmap&month=${monthNum}`,
+        "_blank",
+      );
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setCoachLoading(false);
+    }
+  };
+
+  const handleUnlockRedirect = (type, monthNum = null) => {
+    if (!currentUser || !currentReportId) return;
+
+    // Check if it is already unlocked in local state
+    const isAlreadyUnlocked =
+      type === "topics"
+        ? !!unlockedDetails?.topicBreakdown
+        : type === "weaknesses"
+          ? !!unlockedDetails?.weaknessAnalysis
+          : !!unlockedDetails?.sixMonthPlan?.[`month${monthNum}`];
+
+    if (!isAlreadyUnlocked && Number(credits) <= 0) {
+      setShowZeroCreditsModal(true);
+      return;
+    }
+
+    let url = `/report-detail?id=${currentReportId}&type=${type}`;
+    if (monthNum) {
+      url += `&month=${monthNum}`;
+    }
+    window.open(url, "_blank");
+  };
+
+  const handleCloseReport = () => {
+    setShowReportPage(false);
+    localStorage.removeItem("leetlens_active_report_id");
+  };
 
   useEffect(() => {
     if (!currentUser) {
@@ -362,10 +1126,10 @@ function App() {
       return;
     }
 
-
     setLoading(true);
     setError("");
     setCoachError("");
+    persistRecentSearches(updateRecentSearches(recentSearches, trimmed));
 
     try {
       const token = currentUser ? await currentUser.getIdToken() : null;
@@ -381,7 +1145,9 @@ function App() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(getApiErrorMessage(data, "Failed to analyze username."));
+        throw new Error(
+          getApiErrorMessage(data, "Failed to analyze username."),
+        );
       }
 
       setAnalysis(data);
@@ -398,6 +1164,19 @@ function App() {
       } else {
         setCoachReport("");
         setCoachSavedAt("");
+      }
+
+      if (currentUser) {
+        fetchRecentSearchesFromServer(currentUser)
+          .then((remoteSearches) => {
+            if (remoteSearches.length > 0) {
+              setRecentSearches(remoteSearches);
+              saveRecentSearches(recentSearchStorageKey, remoteSearches);
+            }
+          })
+          .catch(() => {
+            // Keep the optimistic local cache if the sync refresh fails.
+          });
       }
 
       setShowAllTopics(false);
@@ -456,6 +1235,19 @@ function App() {
     setCoachError("");
     setCoachReport("");
     setCoachSavedAt("");
+    setCurrentReportId(null);
+    setUnlockedDetails({
+      topicBreakdown: null,
+      weaknessAnalysis: null,
+      sixMonthPlan: {
+        month1: null,
+        month2: null,
+        month3: null,
+        month4: null,
+        month5: null,
+        month6: null,
+      },
+    });
     setShowReportPage(true);
 
     try {
@@ -475,13 +1267,18 @@ function App() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(getApiErrorMessage(data, "Unable to generate AI report."));
+        throw new Error(
+          getApiErrorMessage(data, "Unable to generate AI report."),
+        );
       }
 
       setCoachReport(data.report || "");
+      setCurrentReportId(data.reportId || null);
       if (typeof data.remainingCredits === "number") {
         setCredits(data.remainingCredits);
       }
+      fetchReportHistory();
+
       const savedAt = new Date().toISOString();
       cache[cacheKey] = {
         report: data.report || "",
@@ -538,9 +1335,9 @@ function App() {
     : [];
 
   const reportSections = parseReportSections(coachReport);
-  const scoreSection = findSection(reportSections, "overall skill score");
-  const insightsSection = findSection(reportSections, "current insights");
-  const readinessSection = findSection(reportSections, "company readiness");
+  const scoreSection = findSection(reportSections, "skill score");
+  const insightsSection = findSection(reportSections, "insight");
+  const readinessSection = findSection(reportSections, "readiness");
   const scoreValue = extractScore(scoreSection);
   const remainingSections = reportSections.filter(
     (section) =>
@@ -548,6 +1345,12 @@ function App() {
       section !== insightsSection &&
       section !== readinessSection,
   );
+  const recentSearchCards = recentSearches.map((search) => ({
+    ...search,
+    savedReport: historyReports.find(
+      (report) => report.username?.toLowerCase() === search.normalized,
+    ),
+  }));
 
   return (
     <main className="container">
@@ -559,209 +1362,308 @@ function App() {
             <span className="lens">Lens</span>
           </h1>
         </div>
-        <AccountMenu
-          onLogin={() => setShowAuthModal(true)}
-          onProfileClick={() => setView("profile")}
-          onCreditsClick={() => setView("credits")}
-        />
+        {!showReportPage && (
+          <AccountMenu
+            onLogin={() => setShowAuthModal(true)}
+            onProfileClick={() => setView("profile")}
+            onCreditsClick={() => setView("credits")}
+            onHistoryClick={() => setView("history")}
+          />
+        )}
       </header>
 
       {view === "profile" ? (
-        <ProfilePage onBack={() => setView("home")} />
+        <ProfilePage
+          onBack={() => setView("home")}
+        />
+      ) : view === "history" ? (
+        <EvaluationHistory
+          onBack={() => setView("profile")}
+          historyReports={historyReports}
+          recentSearches={recentSearches}
+          onOpenReport={loadHistoryReport}
+          onReuseSearch={(value) => {
+            setUsername(value);
+            setView("home");
+          }}
+        />
       ) : view === "credits" ? (
         <CreditsPage onBack={() => setView("home")} />
+      ) : view === "evaluations" ? (
+        <EvaluationHistory
+          onBack={() => setView("profile")}
+          historyReports={historyReports}
+          onOpenReport={loadHistoryReport}
+        />
       ) : (
         <>
           <p className="subtitle">
             Track your problem solving progress and trends.
           </p>
 
-      <section className="card analyze-card">
-        <h2>Analyze LeetCode Profile</h2>
-        <form className="analyze-form" onSubmit={handleAnalyze}>
-          <input
-            type="text"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            placeholder="Paste or type your LeetCode username"
-          />
-          <button type="submit" disabled={loading}>
-            {loading ? "Analyzing..." : "Analyze"}
-          </button>
-        </form>
-        {error ? <p className="error">{error}</p> : null}
-      </section>
+          <section className="card analyze-card">
+            <h2>Analyze LeetCode Profile</h2>
+            <form className="analyze-form" onSubmit={handleAnalyze}>
+              <input
+                type="text"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="Paste or type your LeetCode username"
+              />
+              <button type="submit" disabled={loading}>
+                {loading ? "Analyzing..." : "Analyze"}
+              </button>
+            </form>
+            {error ? <p className="error">{error}</p> : null}
 
-      {analysis ? (
-        <>
-          <section className="dashboard-grid">
-            <article className="dashboard-card solved-card reveal-on-scroll">
-              <div className="ring-wrap">
-                <svg viewBox="0 0 120 120" className="progress-ring">
-                  <circle cx="60" cy="60" r="52" className="ring-track" />
-                  <circle
-                    cx="60"
-                    cy="60"
-                    r="52"
-                    className="ring-progress"
-                    style={{
-                      strokeDasharray: `${(ringProgress / 100) * 327} 327`,
-                    }}
-                  />
-                </svg>
-                <div className="ring-center">
-                  <h3>
-                    {analysis.totals.solved}
-                    <span>/{analysis.totals.questions}</span>
-                  </h3>
-                  <p>Solved</p>
-                  <small>{analysis.totals.attempting} Attempting</small>
+            {recentSearchCards.length > 0 ? (
+              <div className="recent-search-panel reveal-on-scroll is-visible">
+                <div className="recent-search-head">
+                  <h3>Recent Searches</h3>
+                  <span>{recentSearchCards.length} saved</span>
+                </div>
+                <div className="recent-search-list">
+                  {recentSearchCards.map((search) => (
+                    <article
+                      key={search.normalized}
+                      className="recent-search-item"
+                    >
+                      <button
+                        type="button"
+                        className="recent-search-chip"
+                        onClick={() => setUsername(search.username)}
+                      >
+                        @{search.username}
+                      </button>
+                      <div className="recent-search-meta">
+                        <small>
+                          {search.searchedAt
+                            ? new Date(search.searchedAt).toLocaleString()
+                            : "Just now"}
+                        </small>
+                        <span>
+                          {search.savedReport
+                            ? "Saved evaluation available"
+                            : "No saved evaluation yet"}
+                        </span>
+                      </div>
+                      {/* Removed Open Saved Evaluation button per UI request */}
+                    </article>
+                  ))}
                 </div>
               </div>
+            ) : null}
+          </section>
 
-              <div className="difficulty-pills">
-                {difficultyCards.map((item) => (
-                  <article
-                    key={item.key}
-                    className={`difficulty-pill ${item.className}`}
-                  >
-                    <h3>{item.label}</h3>
+          {analysis ? (
+            <>
+              <section className="dashboard-grid">
+                <article className="dashboard-card solved-card reveal-on-scroll">
+                  <div className="ring-wrap">
+                    <svg viewBox="0 0 120 120" className="progress-ring">
+                      <circle cx="60" cy="60" r="52" className="ring-track" />
+                      <circle
+                        cx="60"
+                        cy="60"
+                        r="52"
+                        className="ring-progress"
+                        style={{
+                          strokeDasharray: `${(ringProgress / 100) * 327} 327`,
+                        }}
+                      />
+                    </svg>
+                    <div className="ring-center">
+                      <h3>
+                        {analysis.totals.solved}
+                        <span>/{analysis.totals.questions}</span>
+                      </h3>
+                      <p>Solved</p>
+                      <small>{analysis.totals.attempting} Attempting</small>
+                    </div>
+                  </div>
+
+                  <div className="difficulty-pills">
+                    {difficultyCards.map((item) => (
+                      <article
+                        key={item.key}
+                        className={`difficulty-pill ${item.className}`}
+                      >
+                        <h3>{item.label}</h3>
+                        <p>
+                          {item.data.solved}/{item.data.total}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                </article>
+
+                <article className="dashboard-card badge-card reveal-on-scroll">
+                  <h3>Badges</h3>
+                  <p className="badge-count">0</p>
+                  <p className="badge-note">Locked Badge</p>
+                  <h4>Apr LeetCoding Challenge</h4>
+                </article>
+
+                <article className="dashboard-card activity-card reveal-on-scroll">
+                  <div className="activity-head">
+                    <h3>
+                      {analysis.recentActivity.last30DaysSubmissions}{" "}
+                      submissions in the past 30 days
+                    </h3>
                     <p>
-                      {item.data.solved}/{item.data.total}
+                      Total active days:{" "}
+                      {Math.min(
+                        365,
+                        heatmapData.filter((d) => d.count > 0).length,
+                      )}
+                      <span>
+                        {" "}
+                        | Max streak: {analysis.recentActivity.streak}
+                      </span>
                     </p>
+                  </div>
+
+                  <div className="heatmap-grid year-grid">
+                    {heatmapData.map((point) => {
+                      const level = getHeatLevel(point.count, maxHeatCount);
+                      return (
+                        <span
+                          key={`year-heat-${point.date}`}
+                          className={`heat-cell level-${level}`}
+                          title={`${point.date}: ${point.count} submissions`}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  <div className="month-ticks">
+                    {monthTicks.map((tick) => (
+                      <span
+                        key={`tick-${tick.month}-${tick.index}`}
+                        style={{
+                          left: `${(tick.index / Math.max(heatmapData.length - 1, 1)) * 100}%`,
+                        }}
+                      >
+                        {tick.month}
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              </section>
+
+              <section className="card topic-dark reveal-on-scroll">
+                <h2>Topic Coverage</h2>
+                <p className="topics-note">
+                  Topic breakdown graph with color-coded coverage.
+                </p>
+
+                <div className="topic-graph-list">
+                  {topicGraphRows.map((topic, index) => (
+                    <div
+                      key={`graph-${topic.name}`}
+                      className="topic-graph-row"
+                    >
+                      <div className="topic-graph-head">
+                        <span>{topic.name}</span>
+                        <span>
+                          {topic.solved} ({formatPercent(topic.percentage)})
+                        </span>
+                      </div>
+                      <div className="topic-graph-track">
+                        <div
+                          className="topic-graph-fill"
+                          style={{
+                            width: `${Math.min(topic.percentage, 100)}%`,
+                            background: getTopicColor(index),
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {analysis.topics.length > 3 ? (
+                  <button
+                    type="button"
+                    className="topic-toggle"
+                    onClick={() => setShowAllTopics((value) => !value)}
+                  >
+                    {showAllTopics ? "Show Less" : "Expand All"}
+                  </button>
+                ) : null}
+              </section>
+
+              <section className="card coach-card reveal-on-scroll">
+                <h2>AI Coach Evaluation</h2>
+                <p className="topics-note">
+                  Get a hiring-oriented evaluation with strengths, weaknesses,
+                  and a 7-day plan.
+                </p>
+
+                {coachSavedAt ? (
+                  <p className="saved-note">
+                    Saved report available for this username.
+                  </p>
+                ) : null}
+
+                <div className="coach-actions">
+                  <button
+                    type="button"
+                    className="coach-button"
+                    onClick={() => handleCoachReport(false)}
+                    disabled={coachLoading}
+                  >
+                    {coachLoading
+                      ? "Generating Report..."
+                      : coachReport
+                        ? "Open Saved AI Evaluation"
+                        : "Generate AI Evaluation"}
+                  </button>
+
+                  {coachReport ? (
+                    <button
+                      type="button"
+                      className="coach-button coach-button-secondary"
+                      onClick={() => handleCoachReport(true)}
+                      disabled={coachLoading}
+                    >
+                      {coachLoading
+                        ? "Generating..."
+                        : "Generate New AI Report"}
+                    </button>
+                  ) : null}
+                </div>
+              </section>
+            </>
+          ) : null}
+
+          {currentUser && historyReports.length > 0 && (
+            <section className="card history-card reveal-on-scroll">
+              <h2>Evaluation History</h2>
+              <p className="topics-note">
+                Reopen any of your past evaluations without spending credits.
+              </p>
+              <div className="history-list">
+                {historyReports.map((rep) => (
+                  <article key={rep.id} className="history-item">
+                    <div className="history-item-info">
+                      <h4>{rep.username}</h4>
+                      <small>{new Date(rep.timestamp).toLocaleString()}</small>
+                    </div>
+                    <button
+                      type="button"
+                      className="history-open-btn"
+                      onClick={() => loadHistoryReport(rep)}
+                    >
+                      Open Report
+                    </button>
                   </article>
                 ))}
               </div>
-            </article>
-
-            <article className="dashboard-card badge-card reveal-on-scroll">
-              <h3>Badges</h3>
-              <p className="badge-count">0</p>
-              <p className="badge-note">Locked Badge</p>
-              <h4>Apr LeetCoding Challenge</h4>
-            </article>
-
-            <article className="dashboard-card activity-card reveal-on-scroll">
-              <div className="activity-head">
-                <h3>
-                  {analysis.recentActivity.last30DaysSubmissions} submissions in
-                  the past 30 days
-                </h3>
-                <p>
-                  Total active days:{" "}
-                  {Math.min(365, heatmapData.filter((d) => d.count > 0).length)}
-                  <span> | Max streak: {analysis.recentActivity.streak}</span>
-                </p>
-              </div>
-
-              <div className="heatmap-grid year-grid">
-                {heatmapData.map((point) => {
-                  const level = getHeatLevel(point.count, maxHeatCount);
-                  return (
-                    <span
-                      key={`year-heat-${point.date}`}
-                      className={`heat-cell level-${level}`}
-                      title={`${point.date}: ${point.count} submissions`}
-                    />
-                  );
-                })}
-              </div>
-
-              <div className="month-ticks">
-                {monthTicks.map((tick) => (
-                  <span
-                    key={`tick-${tick.month}-${tick.index}`}
-                    style={{
-                      left: `${(tick.index / Math.max(heatmapData.length - 1, 1)) * 100}%`,
-                    }}
-                  >
-                    {tick.month}
-                  </span>
-                ))}
-              </div>
-            </article>
-          </section>
-
-          <section className="card topic-dark reveal-on-scroll">
-            <h2>Topic Coverage</h2>
-            <p className="topics-note">
-              Topic breakdown graph with color-coded coverage.
-            </p>
-
-            <div className="topic-graph-list">
-              {topicGraphRows.map((topic, index) => (
-                <div key={`graph-${topic.name}`} className="topic-graph-row">
-                  <div className="topic-graph-head">
-                    <span>{topic.name}</span>
-                    <span>
-                      {topic.solved} ({formatPercent(topic.percentage)})
-                    </span>
-                  </div>
-                  <div className="topic-graph-track">
-                    <div
-                      className="topic-graph-fill"
-                      style={{
-                        width: `${Math.min(topic.percentage, 100)}%`,
-                        background: getTopicColor(index),
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {analysis.topics.length > 3 ? (
-              <button
-                type="button"
-                className="topic-toggle"
-                onClick={() => setShowAllTopics((value) => !value)}
-              >
-                {showAllTopics ? "Show Less" : "Expand All"}
-              </button>
-            ) : null}
-          </section>
-
-          <section className="card coach-card reveal-on-scroll">
-            <h2>AI Coach Evaluation</h2>
-            <p className="topics-note">
-              Get a hiring-oriented evaluation with strengths, weaknesses, and a
-              7-day plan.
-            </p>
-
-            {coachSavedAt ? (
-              <p className="saved-note">
-                Saved report available for this username.
-              </p>
-            ) : null}
-
-            <div className="coach-actions">
-              <button
-                type="button"
-                className="coach-button"
-                onClick={() => handleCoachReport(false)}
-                disabled={coachLoading}
-              >
-                {coachLoading
-                  ? "Generating Report..."
-                  : coachReport
-                    ? "Open Saved AI Evaluation"
-                    : "Generate AI Evaluation"}
-              </button>
-
-              {coachReport ? (
-                <button
-                  type="button"
-                  className="coach-button coach-button-secondary"
-                  onClick={() => handleCoachReport(true)}
-                  disabled={coachLoading}
-                >
-                  {coachLoading ? "Generating..." : "Generate New AI Report"}
-                </button>
-              ) : null}
-            </div>
-          </section>
+            </section>
+          )}
         </>
-      ) : null}
+      )}
 
       {showReportPage ? (
         <section className="report-page">
@@ -770,235 +1672,395 @@ function App() {
             <button
               type="button"
               className="close-report"
-              onClick={() => setShowReportPage(false)}
+              onClick={handleCloseReport}
             >
-              Back
+              Back to Dashboard
             </button>
           </div>
 
-          {coachLoading ? (
-            <div className="report-loader-wrap">
-              <div className="loader" />
-              <h3>Generating AI report...</h3>
-              <p>
-                Building current insights and future plans for your profile.
-              </p>
-            </div>
-          ) : null}
+          <div className="report-split-container">
+            {currentUser && historyReports.length > 0 && (
+              <aside className="report-sidebar">
+                <h3>Saved Reports</h3>
+                <div className="sidebar-tiles">
+                  {historyReports.map((rep) => {
+                    const isActive = rep.id === currentReportId;
+                    const dateStr = rep.timestamp
+                      ? new Date(rep.timestamp).toLocaleString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "Date Unknown";
+                    return (
+                      <article
+                        key={rep.id}
+                        className={`history-tile ${isActive ? "active" : ""}`}
+                        onClick={() => loadHistoryReport(rep)}
+                      >
+                        <div className="tile-header">
+                          <span className="tile-username">@{rep.username}</span>
+                          {isActive && (
+                            <span className="active-indicator">Active</span>
+                          )}
+                        </div>
+                        <small className="tile-date">{dateStr}</small>
+                      </article>
+                    );
+                  })}
+                </div>
+              </aside>
+            )}
 
-          {!coachLoading && coachError ? (
-            <p className="error">{coachError}</p>
-          ) : null}
-
-          {!coachLoading && !coachError && reportSections.length > 0 ? (
-            <>
-              {scoreSection ? (
-                <article className="report-score-card reveal-on-scroll">
-                  <div className="report-score-badge">
-                    <span className="score-value">{currentUser ? (scoreValue ?? "--") : "XX"}</span>
-                    <span className="score-max">/100</span>
-                  </div>
-                  <div className="report-score-copy">
-                    <h3>Overall Skill Score</h3>
-                    <p>
-                      Snapshot of your interview readiness based on topic depth,
-                      difficulty handling, and contest profile.
-                    </p>
-                  </div>
-                </article>
-              ) : null}
-
-              {!currentUser ? (
-                <div className="report-unlock-cta reveal-on-scroll">
-                  <h3>Unlock Your Coding Score & Full Report</h3>
-                  <p>To get your coding score and full AI report, sign in.</p>
-                  <button type="button" className="unlock-btn" onClick={() => setShowAuthModal(true)}>
-                    Sign In to Unlock Full Report
-                  </button>
+            <main className="report-main-content">
+              {coachLoading ? (
+                <div className="report-loader-wrap">
+                  <div className="loader" />
+                  <h3>Generating AI report...</h3>
+                  <p>
+                    Building current insights and future plans for your profile.
+                  </p>
                 </div>
               ) : null}
 
-              <div className="report-priority-grid">
-                {insightsSection ? (
-                  <article className="report-section featured reveal-on-scroll">
-                    <h3 className="section-title section-title-insights">
-                      Current Insights
-                    </h3>
-                    <ul>
-                      {insightsSection.items.map((item, index) => {
-                        if (!currentUser) {
-                          if (index === 0) {
-                            return (
-                              <li
-                                key={`insights-${index}`}
-                                style={{ "--item-index": index }}
-                              >
-                                {renderLineWithHighlights(item)}
-                              </li>
-                            );
-                          } else if (index === 1) {
-                            const halfLength = Math.ceil(item.length / 2);
-                            const firstHalf = item.substring(0, halfLength);
-                            return (
-                              <li
-                                key={`insights-${index}`}
-                                style={{ "--item-index": index }}
-                              >
-                                {renderLineWithHighlights(firstHalf)}...
-                              </li>
-                            );
-                          } else {
-                            return (
-                              <li
-                                key={`insights-${index}`}
-                                className="blurred-gate"
-                                style={{ "--item-index": index }}
-                              >
-                                {renderLineWithHighlights(item)}
-                              </li>
-                            );
-                          }
-                        } else {
-                          return (
-                            <li
-                              key={`insights-${index}`}
-                              style={{ "--item-index": index }}
-                            >
-                              {renderLineWithHighlights(item)}
-                            </li>
-                          );
-                        }
-                      })}
-                    </ul>
-                  </article>
-                ) : null}
+              {!coachLoading && coachError ? (
+                <p className="error">{coachError}</p>
+              ) : null}
 
-                {readinessSection ? (
-                  <article className={`report-section featured readiness reveal-on-scroll ${!currentUser ? "blurred-gate" : ""}`}>
-                    <h3 className="section-title section-title-readiness">
-                      Company Readiness (%)
-                    </h3>
-                    {(() => {
-                      const readinessRows = pairReadinessItems(
-                        readinessSection.items,
-                      );
-                      const avgReadiness = getAverageReadiness(readinessRows);
+              {!coachLoading && !coachError && reportSections.length > 0 ? (
+                <>
+                  {scoreSection ? (
+                    <article className="report-score-card reveal-on-scroll">
+                      <div className="report-score-badge">
+                        <span className="score-value">
+                          {currentUser ? (scoreValue ?? "--") : "XX"}
+                        </span>
+                        <span className="score-max">/100</span>
+                      </div>
+                      <div className="report-score-copy">
+                        <h3>Overall Skill Score</h3>
+                        <p>
+                          Snapshot of your interview readiness based on topic
+                          depth, difficulty handling, and contest profile.
+                        </p>
+                      </div>
+                    </article>
+                  ) : null}
 
-                      return (
-                        <>
-                          {avgReadiness !== null ? (
-                            <div className="readiness-average">
-                              <span className="readiness-average-label">
-                                Average Readiness
-                              </span>
-                              <span className="readiness-score-pill">
-                                {avgReadiness}
-                                <small>/100</small>
-                              </span>
-                            </div>
-                          ) : null}
+                  {!currentUser ? (
+                    <div className="report-unlock-cta reveal-on-scroll">
+                      <h3>Unlock Your Coding Score & Full Report</h3>
+                      <p>
+                        To get your coding score and full AI report, sign in.
+                      </p>
+                      <button
+                        type="button"
+                        className="unlock-btn"
+                        onClick={() => setShowAuthModal(true)}
+                      >
+                        Sign In to Unlock Full Report
+                      </button>
+                    </div>
+                  ) : null}
 
-                          <div className="section-row-list">
-                            {readinessRows.map((row, index) => {
-                              const parsed = parseReadinessHeading(row.heading);
+                  <div className="report-priority-grid">
+                    {insightsSection ? (
+                      <article className="report-section featured reveal-on-scroll">
+                        <h3 className="section-title section-title-insights">
+                          Current Insights
+                        </h3>
+                        <ul>
+                          {insightsSection.items.map((item, index) => {
+                            if (!currentUser) {
+                              if (index === 0) {
+                                return (
+                                  <li
+                                    key={`insights-${index}`}
+                                    style={{ "--item-index": index }}
+                                  >
+                                    {renderLineWithHighlights(item)}
+                                  </li>
+                                );
+                              } else if (index === 1) {
+                                const halfLength = Math.ceil(item.length / 2);
+                                const firstHalf = item.substring(0, halfLength);
+                                return (
+                                  <li
+                                    key={`insights-${index}`}
+                                    style={{ "--item-index": index }}
+                                  >
+                                    {renderLineWithHighlights(firstHalf)}...
+                                  </li>
+                                );
+                              } else {
+                                return (
+                                  <li
+                                    key={`insights-${index}`}
+                                    className="blurred-gate"
+                                    style={{ "--item-index": index }}
+                                  >
+                                    {renderLineWithHighlights(item)}
+                                  </li>
+                                );
+                              }
+                            } else {
                               return (
-                                <article
-                                  key={`readiness-${index}`}
-                                  className="section-item-card"
+                                <li
+                                  key={`insights-${index}`}
                                   style={{ "--item-index": index }}
                                 >
-                                  <div className="section-item-headline">
-                                    <p className="section-item-heading">
-                                      {renderLineWithHighlights(parsed.label)}
-                                    </p>
-                                    {parsed.score !== null ? (
-                                      <span className="readiness-score-pill">
-                                        {parsed.score}
-                                        <small>/100</small>
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                  {row.details ? (
-                                    <p className="section-item-details">
-                                      {renderLineWithHighlights(row.details)}
-                                    </p>
-                                  ) : null}
-                                </article>
+                                  {renderLineWithHighlights(item)}
+                                </li>
                               );
-                            })}
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </article>
-                ) : null}
-              </div>
+                            }
+                          })}
+                        </ul>
+                      </article>
+                    ) : null}
 
-              <div className={`report-sections ${!currentUser ? "blurred-gate" : ""}`}>
-                {remainingSections.map((section) => (
-                  <article
-                    key={section.title}
-                    className="report-section reveal-on-scroll"
-                  >
-                    <h3
-                      className={`section-title section-title-${getSectionTone(section.title)}`}
-                    >
-                      {section.title}
-                    </h3>
-                    {normalizeSectionTitle(section.title).includes(
-                      "topic breakdown",
-                    ) ? (
-                      <div className="section-row-list">
-                        {pairHeadingDetailItems(section.items).map(
-                          (row, index) => (
-                            <article
-                              key={`${section.title}-row-${index}`}
-                              className="section-item-card"
-                              style={{ "--item-index": index }}
-                            >
-                              <p className="section-item-heading">
-                                {renderLineWithHighlights(
-                                  stripTrailingColon(row.heading),
-                                )}
-                              </p>
-                              {row.details ? (
-                                <p className="section-item-details">
-                                  {renderLineWithHighlights(row.details)}
-                                </p>
+                    {readinessSection ? (
+                      <article
+                        className={`report-section featured readiness reveal-on-scroll ${!currentUser ? "blurred-gate" : ""}`}
+                      >
+                        <h3 className="section-title section-title-readiness">
+                          Company Readiness (%)
+                        </h3>
+                        {(() => {
+                          const readinessRows = pairReadinessItems(
+                            readinessSection.items,
+                          );
+                          const avgReadiness =
+                            getAverageReadiness(readinessRows);
+
+                          return (
+                            <>
+                              {avgReadiness !== null ? (
+                                <div className="readiness-average">
+                                  <span className="readiness-average-label">
+                                    Average Readiness
+                                  </span>
+                                  <span className="readiness-score-pill">
+                                    {avgReadiness}
+                                    <small>/100</small>
+                                  </span>
+                                </div>
                               ) : null}
-                            </article>
-                          ),
-                        )}
-                      </div>
-                    ) : (
-                      <ul>
-                        {section.items.map((item, index) => (
-                          <li
-                            key={`${section.title}-${index}`}
-                            style={{ "--item-index": index }}
+
+                              <div className="section-row-list">
+                                {readinessRows.map((row, index) => {
+                                  const parsed = parseReadinessHeading(
+                                    row.heading,
+                                  );
+                                  return (
+                                    <article
+                                      key={`readiness-${index}`}
+                                      className="section-item-card"
+                                      style={{ "--item-index": index }}
+                                    >
+                                      <div className="section-item-headline">
+                                        <p className="section-item-heading">
+                                          {renderLineWithHighlights(
+                                            parsed.label,
+                                          )}
+                                        </p>
+                                        {parsed.score !== null ? (
+                                          <span className="readiness-score-pill">
+                                            {parsed.score}
+                                            <small>/100</small>
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                      {row.details ? (
+                                        <p className="section-item-details">
+                                          {renderLineWithHighlights(
+                                            row.details,
+                                          )}
+                                        </p>
+                                      ) : null}
+                                    </article>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          );
+                        })()}
+
+                      </article>
+                    ) : null}
+
+                        {remainingSections.map((section, sIndex) => (
+                          <article
+                            key={`section-${sIndex}`}
+                            className="report-section reveal-on-scroll"
                           >
-                            {renderLineWithHighlights(item)}
-                          </li>
+                            <h3 className="section-title">{section.title}</h3>
+                            <ul>
+                              {section.items.map((item, index) => (
+                                <li
+                                  key={`${section.title}-${index}`}
+                                  style={{ "--item-index": index }}
+                                >
+                                  {renderLineWithHighlights(item)}
+                                </li>
+                              ))}
+                            </ul>
+
+                            {normalizeSectionTitle(section.title).includes(
+                              "weakness",
+                            ) &&
+                              currentUser &&
+                              currentReportId && (
+                                <div className="detail-unlock-container">
+                                  {unlockedDetails?.weaknessAnalysis ? (
+                                    <div className="unlocked-action-container">
+                                      <button
+                                        type="button"
+                                        className="unlock-action-btn view-tab-btn"
+                                        onClick={() =>
+                                          handleUnlockRedirect("weaknesses")
+                                        }
+                                      >
+                                        Open Weakness Analysis (New Tab)
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="unlock-action-btn"
+                                      onClick={() =>
+                                        handleUnlockRedirect("weaknesses")
+                                      }
+                                    >
+                                      Deep Weakness Analysis (-1 credit)
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                            {normalizeSectionTitle(section.title).includes(
+                              "plan",
+                            ) &&
+                              currentUser &&
+                              currentReportId && (
+                                <div className="roadmap-6month-container">
+                                  <h4>Detailed 6-Month Preparation Roadmap</h4>
+                                  <hr className="detail-divider" />
+                                  <p className="roadmap-explanation-note">
+                                    Plan your next 6 months day-by-day.
+                                    Unlocking each month consumes 1 credit.
+                                  </p>
+                                  <div className="roadmap-month-tabs">
+                                    {[1, 2, 3, 4, 5, 6].map((m) => {
+                                      const monthKey = `month${m}`;
+                                      const isUnlocked =
+                                        !!unlockedDetails?.sixMonthPlan?.[
+                                          monthKey
+                                        ];
+                                      const isActive = activeMonthTab === m;
+                                      return (
+                                        <button
+                                          key={`tab-month-${m}`}
+                                          type="button"
+                                          className={`month-tab-btn ${isUnlocked ? "unlocked" : "locked"} ${isActive ? "active" : ""}`}
+                                          onClick={() => {
+                                            setActiveMonthTab(m);
+                                          }}
+                                        >
+                                          Month {m} {isUnlocked ? "✓" : "🔒"}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  {(() => {
+                                    const monthKey = `month${activeMonthTab}`;
+                                    const isUnlocked =
+                                      !!unlockedDetails?.sixMonthPlan?.[
+                                        monthKey
+                                      ];
+                                    return (
+                                      <div
+                                        className="month-curriculum-panel"
+                                        style={{
+                                          marginTop: "1rem",
+                                          textAlign: "center",
+                                        }}
+                                      >
+                                        {isUnlocked ? (
+                                          <div className="unlocked-action-container">
+                                            <button
+                                              type="button"
+                                              className="unlock-action-btn view-tab-btn"
+                                              onClick={() =>
+                                                handleUnlockRedirect(
+                                                  "roadmap",
+                                                  activeMonthTab,
+                                                )
+                                              }
+                                            >
+                                              Open Month {activeMonthTab}{" "}
+                                              Curriculum (New Tab)
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div
+                                            className="locked-month-indicator"
+                                            style={{
+                                              display: "flex",
+                                              flexDirection: "column",
+                                              gap: "1rem",
+                                              alignItems: "center",
+                                            }}
+                                          >
+                                            <p style={{ margin: 0 }}>
+                                              Month {activeMonthTab} preparation
+                                              curriculum is locked.
+                                            </p>
+                                            <button
+                                              type="button"
+                                              className="unlock-action-btn"
+                                              onClick={() =>
+                                                handleUnlockRedirect(
+                                                  "roadmap",
+                                                  activeMonthTab,
+                                                )
+                                              }
+                                              style={{ maxWidth: "320px" }}
+                                            >
+                                              Unlock Month {activeMonthTab} (-1
+                                              credit)
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              )}
+                          </article>
                         ))}
-                      </ul>
-                    )}
-                  </article>
-                ))}
-              </div>
-            </>
-          ) : null}
+                  </div>
+                </>
+              ) : null}
+            </main>
+          </div>
         </section>
       ) : null}
-        </>
-      )}
 
       {showAuthModal ? (
         <AuthModal onClose={() => setShowAuthModal(false)} />
       ) : null}
 
       {showZeroCreditsModal ? (
-        <div className="premium-modal-backdrop" onClick={() => setShowZeroCreditsModal(false)}>
-          <div className="premium-modal-card zero-credits-modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="premium-modal-backdrop"
+          onClick={() => setShowZeroCreditsModal(false)}
+        >
+          <div
+            className="premium-modal-card zero-credits-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
               className="premium-modal-close"
@@ -1007,14 +2069,26 @@ function App() {
               &times;
             </button>
             <div className="premium-modal-icon-wrap">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
-                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              <svg
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#ef4444"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
             </div>
             <h2>0 Credits Left</h2>
-            <p>You have run out of evaluation credits. Please buy credits or claim your free weekly credits to generate a new AI report.</p>
+            <p>
+              You have run out of evaluation credits. Please buy credits or
+              claim your free weekly credits to generate a new AI report.
+            </p>
             <div className="premium-modal-actions">
               <button
                 type="button"

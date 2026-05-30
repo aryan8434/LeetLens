@@ -39,6 +39,11 @@ export default function App() {
   const [updateLoading, setUpdateLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [userSearches, setUserSearches] = useState([]);
+  const [loadingUserSearches, setLoadingUserSearches] = useState(false);
+  const [selectedReportText, setSelectedReportText] = useState(null);
+
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
@@ -78,6 +83,33 @@ export default function App() {
     };
     fetchMetrics();
   }, []);
+
+  const openUserDetails = async (user) => {
+    setSelectedUser(user);
+    setEditingCreditsValue(user.credits || 0);
+    setLoadingUserSearches(true);
+    setErrorMsg(null);
+    setUserSearches([]);
+
+    try {
+      const searchesSnapshot = await getDocs(
+        collection(db, "registered_users", user.id, "searches")
+      );
+      const s = [];
+      searchesSnapshot.forEach((docSnap) => {
+        s.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
+      setUserSearches(
+        s.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
+      );
+    } catch (err) {
+      console.error("Failed to load user searches:", err);
+      setErrorMsg("Failed to load user searches history. See console for details.");
+    } finally {
+      setLoadingUserSearches(false);
+    }
+  };
 
   const openFolder = async (folderId) => {
     setLoading(true);
@@ -396,7 +428,6 @@ export default function App() {
             )}
             {registeredUsers.map((user) => {
               const dateVal = user.createdAt?.toDate();
-              const isEditing = editingCreditsId === user.id;
 
               return (
                 <tr className="table-row" key={user.id}>
@@ -405,59 +436,7 @@ export default function App() {
                   </td>
                   <td>{user.name || "--"}</td>
                   <td>
-                    {isEditing ? (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          alignItems: "center",
-                        }}
-                      >
-                        <input
-                          type="number"
-                          min={0}
-                          value={editingCreditsValue}
-                          onChange={(e) =>
-                            setEditingCreditsValue(Number(e.target.value))
-                          }
-                          style={{ width: 100 }}
-                          disabled={updateLoading}
-                        />
-                        <button
-                          className="action-btn"
-                          onClick={() => saveCredits(user.id)}
-                          disabled={updateLoading}
-                        >
-                          {updateLoading ? "Saving..." : "Save"}
-                        </button>
-                        <button
-                          className="action-btn"
-                          onClick={() => {
-                            setEditingCreditsId(null);
-                            setEditingCreditsValue(0);
-                          }}
-                          disabled={updateLoading}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          alignItems: "center",
-                        }}
-                      >
-                        <span className="chip">{user.credits} Credits</span>
-                        <button
-                          className="action-btn"
-                          onClick={() => startEditCredits(user)}
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    )}
+                    <span className="chip">{user.credits} Credits</span>
                   </td>
                   <td style={{ fontFamily: "monospace" }}>
                     {user.ipAddress || "--"}
@@ -471,11 +450,10 @@ export default function App() {
                   </td>
                   <td>
                     <button
-                      className="action-btn delete-btn"
-                      onClick={() => deleteUser(user.id)}
-                      disabled={updateLoading}
+                      className="action-btn"
+                      onClick={() => openUserDetails(user)}
                     >
-                      Delete
+                      View Details
                     </button>
                   </td>
                 </tr>
@@ -486,11 +464,6 @@ export default function App() {
       </div>
     </>
   );
-
-  const startEditCredits = (user) => {
-    setEditingCreditsId(user.id);
-    setEditingCreditsValue(Number(user.credits || 0));
-  };
 
   const saveCredits = async (userId) => {
     const newCredits = Number(editingCreditsValue || 0);
@@ -507,8 +480,8 @@ export default function App() {
       setRegisteredUsers((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, credits: newCredits } : u)),
       );
-      setEditingCreditsId(null);
-      setEditingCreditsValue(0);
+      setSelectedUser((prev) => (prev ? { ...prev, credits: newCredits } : null));
+      alert("Credits updated successfully!");
     } catch (err) {
       console.error("Failed to update credits:", err);
       alert("Failed to update credits. See console for details.");
@@ -517,7 +490,7 @@ export default function App() {
     }
   };
 
-  const deleteUser = async (userId) => {
+  const handleDeleteUserFromDetails = async (userId) => {
     if (!window.confirm("Are you sure you want to delete this user's records from the database? This action cannot be undone.")) {
       return;
     }
@@ -528,13 +501,209 @@ export default function App() {
 
       // Update local state
       setRegisteredUsers((prev) => prev.filter((u) => u.id !== userId));
-      alert("User deleted successfully from database!");
+      setSelectedUser(null);
+      setUserSearches([]);
+      alert("User records deleted successfully from database!");
     } catch (err) {
       console.error("Failed to delete user:", err);
       alert("Failed to delete user: " + err.message);
     } finally {
       setUpdateLoading(false);
     }
+  };
+
+  const renderUserDetails = () => {
+    if (!selectedUser) return null;
+
+    const dateVal = selectedUser.createdAt?.toDate();
+    const profileSearches = userSearches.filter(
+      (s) => s.type === "analysis" || !s.type
+    );
+    const aiReports = userSearches.filter((s) => s.type === "ai_report");
+
+    return (
+      <>
+        <button
+          className="back-btn"
+          onClick={() => {
+            setSelectedUser(null);
+            setUserSearches([]);
+            setErrorMsg(null);
+          }}
+        >
+          <ArrowLeft size={18} /> Back to Registered Users
+        </button>
+
+        <div className="page-header">
+          <h1>User Profile: {selectedUser.name || "Unnamed User"}</h1>
+          <p>Manage credits, deletion and view search/evaluation history for this account.</p>
+          {errorMsg && (
+            <p style={{ color: "#ffb4b4", marginTop: 8 }}>{errorMsg}</p>
+          )}
+        </div>
+
+        <div className="user-details-grid">
+          {/* Left Column: Management & Profile */}
+          <div className="detail-sidebar-card glass">
+            <div className="profile-info-group">
+              <h3>Profile Summary</h3>
+              <div className="info-item">
+                <span className="info-label">Email:</span>
+                <span className="info-value accent-text">{selectedUser.email}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Name:</span>
+                <span className="info-value">{selectedUser.name || "--"}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Age:</span>
+                <span className="info-value">{selectedUser.age || "--"}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">DOB:</span>
+                <span className="info-value">{selectedUser.dob || "--"}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Location:</span>
+                <span className="info-value">{selectedUser.location || "--"}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Bio:</span>
+                <span className="info-value bio-text">{selectedUser.bio || "--"}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Registered IP:</span>
+                <span className="info-value code-font">{selectedUser.ipAddress || "--"}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Registered At:</span>
+                <span className="info-value">
+                  {dateVal
+                    ? dateVal.toLocaleDateString() + " " + dateVal.toLocaleTimeString()
+                    : "--"}
+                </span>
+              </div>
+            </div>
+
+            <hr className="detail-divider" />
+
+            <div className="credits-edit-section">
+              <h3>Edit Credits</h3>
+              <div className="credits-edit-row">
+                <input
+                  type="number"
+                  min={0}
+                  value={editingCreditsValue}
+                  onChange={(e) =>
+                    setEditingCreditsValue(Number(e.target.value))
+                  }
+                  disabled={updateLoading}
+                />
+                <button
+                  className="action-btn"
+                  onClick={() => saveCredits(selectedUser.id)}
+                  disabled={updateLoading}
+                >
+                  {updateLoading ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+
+            <hr className="detail-divider" />
+
+            <div className="danger-zone-section">
+              <h3>Danger Zone</h3>
+              <p className="danger-desc">This permanently deletes the user's database record, resetting all credits and logs.</p>
+              <button
+                className="action-btn delete-btn"
+                style={{ width: "100%" }}
+                onClick={() => handleDeleteUserFromDetails(selectedUser.id)}
+                disabled={updateLoading}
+              >
+                Delete User Records
+              </button>
+            </div>
+          </div>
+
+          {/* Right Column: Search Logs & AI Reports */}
+          <div className="detail-history-card glass">
+            <h2>User Activity Log</h2>
+
+            {loadingUserSearches ? (
+              <div className="loading-wrapper-inline">
+                <Loader2 size={24} className="spinner" />
+                <p>Loading activity logs...</p>
+              </div>
+            ) : (
+              <div className="history-split-columns">
+                {/* Column 1: Profile Searches */}
+                <div className="history-column">
+                  <h3>Profile Search History ({profileSearches.length})</h3>
+                  <div className="history-list-wrap">
+                    {profileSearches.length === 0 ? (
+                      <p className="empty-text">No profile searches logged yet.</p>
+                    ) : (
+                      <div className="activity-list">
+                        {profileSearches.map((log) => {
+                          const logTime = log.timestamp?.toDate();
+                          return (
+                            <div className="activity-log-item" key={log.id}>
+                              <div className="log-main">
+                                <Search size={14} />
+                                <strong>{log.username}</strong>
+                              </div>
+                              <div className="log-meta">
+                                <span>{logTime ? logTime.toLocaleString() : "--"}</span>
+                                <span className="code-font">{log.ipAddress || "No IP"}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 2: AI Reports */}
+                <div className="history-column">
+                  <h3>Generated AI Reports ({aiReports.length})</h3>
+                  <div className="history-list-wrap">
+                    {aiReports.length === 0 ? (
+                      <p className="empty-text">No AI reports generated yet.</p>
+                    ) : (
+                      <div className="activity-list">
+                        {aiReports.map((log) => {
+                          const logTime = log.timestamp?.toDate();
+                          return (
+                            <div className="activity-log-item" key={log.id}>
+                              <div className="log-main">
+                                <Activity size={14} />
+                                <strong>{log.username}</strong>
+                                <button
+                                  type="button"
+                                  className="view-report-link-btn"
+                                  onClick={() => setSelectedReportText(log.report || "No report text content stored in this log.")}
+                                >
+                                  View Report
+                                </button>
+                              </div>
+                              <div className="log-meta">
+                                <span>{logTime ? logTime.toLocaleString() : "--"}</span>
+                                <span className="code-font">{log.ipAddress || "No IP"}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    );
   };
 
   return (
@@ -546,9 +715,10 @@ export default function App() {
         </div>
         <nav className="nav-links">
           <button
-            className={`nav-item ${!selectedFolder && activeTab === "overview" ? "active" : ""}`}
+            className={`nav-item ${!selectedFolder && !selectedUser && activeTab === "overview" ? "active" : ""}`}
             onClick={() => {
               setSelectedFolder(null);
+              setSelectedUser(null);
               setActiveTab("overview");
             }}
           >
@@ -559,6 +729,7 @@ export default function App() {
             className={`nav-item ${activeTab === "users" ? "active" : ""}`}
             onClick={() => {
               setSelectedFolder(null);
+              setSelectedUser(null);
               setActiveTab("users");
             }}
           >
@@ -580,12 +751,30 @@ export default function App() {
       </aside>
 
       <main className="main-content">
-        {activeTab === "users"
-          ? renderRegisteredUsers()
-          : !selectedFolder
-            ? renderOverview()
-            : renderFolderDetails()}
+        {selectedUser
+          ? renderUserDetails()
+          : activeTab === "users"
+            ? renderRegisteredUsers()
+            : !selectedFolder
+              ? renderOverview()
+              : renderFolderDetails()}
       </main>
+
+      {selectedReportText ? (
+        <div className="admin-modal-backdrop" onClick={() => setSelectedReportText(null)}>
+          <div className="admin-modal-card" onClick={(e) => e.stopPropagation()}>
+            <button className="admin-modal-close" onClick={() => setSelectedReportText(null)}>
+              &times;
+            </button>
+            <h3 style={{ marginBottom: "1rem", color: "var(--accent)", fontSize: "1.3rem" }}>
+              Generated AI Report
+            </h3>
+            <div className="admin-report-text-scroll">
+              <pre className="admin-report-text">{selectedReportText}</pre>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

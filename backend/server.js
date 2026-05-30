@@ -483,6 +483,58 @@ async function logSearchInFirestore({ username, req }) {
   await batch.commit();
 }
 
+async function logSearchForUser({ uid, username, req, type = "analysis", reportContent = null, analysisData = null }) {
+  if (!firestoreDb || !admin) {
+    return null;
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const ipAddress = normalizeIp(req ? getClientIp(req) : "");
+  const deviceInfo = req
+    ? getDeviceInfoFromRequest(req)
+    : {
+        vendor: "Unknown",
+        model: "Unknown",
+        type: "desktop",
+        os: "Unknown",
+        browser: "Unknown",
+      };
+
+  const userSearchesRef = firestoreDb
+    .collection(REGISTERED_USERS_COLLECTION)
+    .doc(uid)
+    .collection("searches")
+    .doc();
+
+  const logData = {
+    username,
+    timestamp: now,
+    ipAddress,
+    device: deviceInfo,
+    type,
+  };
+
+  if (type === "ai_report" && reportContent) {
+    logData.report = reportContent;
+    logData.analysisData = analysisData;
+    logData.details = {
+      topicBreakdown: null,
+      weaknessAnalysis: null,
+      sixMonthPlan: {
+        month1: null,
+        month2: null,
+        month3: null,
+        month4: null,
+        month5: null,
+        month6: null
+      }
+    };
+  }
+
+  await userSearchesRef.set(logData);
+  return userSearchesRef.id;
+}
+
 const ANALYZE_QUERY = `
   query userProblemsSolved($username: String!) {
     allQuestionsCount {
@@ -621,21 +673,182 @@ async function fetchRecentSolvedProblems(username) {
     }));
 }
 
+function calculateBrutalScores(analysis) {
+  const easyTotal = Number(analysis.difficulty.easy.solved || 0);
+  const mediumTotal = Number(analysis.difficulty.medium.solved || 0);
+  const hardTotal = Number(analysis.difficulty.hard.solved || 0);
+  const topics = analysis.topics || [];
+
+  // Core topics to check coverage
+  const CORE_TOPICS = ["Array", "String", "Hash Table", "Dynamic Programming", "Math", "Sorting", "Tree", "Graph", "Binary Search", "Greedy"];
+
+  // 1. Distribute difficulties to topics proportionally
+  const breakdown = topics.map(t => ({
+    name: t.name,
+    total: Number(t.solved || 0),
+    easy: 0,
+    medium: 0,
+    hard: 0
+  }));
+
+  // Distribute hard questions
+  let remainingHard = hardTotal;
+  breakdown.sort((a, b) => b.total - a.total);
+  for (let t of breakdown) {
+    if (remainingHard > 0 && t.total > 0) {
+      t.hard += 1;
+      remainingHard -= 1;
+    }
+  }
+  while (remainingHard > 0) {
+    let distributed = false;
+    for (let t of breakdown) {
+      if (remainingHard > 0 && t.total > (t.easy + t.medium + t.hard)) {
+        t.hard += 1;
+        remainingHard -= 1;
+        distributed = true;
+      }
+    }
+    if (!distributed) break;
+  }
+
+  // Distribute medium questions
+  let remainingMedium = mediumTotal;
+  for (let t of breakdown) {
+    if (remainingMedium > 0 && t.total > (t.easy + t.medium + t.hard)) {
+      t.medium += 1;
+      remainingMedium -= 1;
+    }
+  }
+  while (remainingMedium > 0) {
+    let distributed = false;
+    for (let t of breakdown) {
+      if (remainingMedium > 0 && t.total > (t.easy + t.medium + t.hard)) {
+        t.medium += 1;
+        remainingMedium -= 1;
+        distributed = true;
+      }
+    }
+    if (!distributed) break;
+  }
+
+  // Easy gets the rest of the solved questions in each topic
+  for (let t of breakdown) {
+    const cap = t.total - (t.hard + t.medium);
+    t.easy = cap > 0 ? cap : 0;
+  }
+
+  // 2. FAANG rating (hard questions only, scaled from 10 hards = 20 score, up to 200 hards = 100 score)
+  let faangScore = 0;
+  if (hardTotal <= 10) {
+    faangScore = hardTotal * 2;
+  } else {
+    faangScore = 20 + ((hardTotal - 10) / 190) * 80;
+  }
+  faangScore = Math.min(100, faangScore);
+
+  let faangMissed = 0;
+  CORE_TOPICS.forEach(core => {
+    const t = breakdown.find(item => item.name.toLowerCase().includes(core.toLowerCase()));
+    if (!t || t.hard < 1) {
+      faangMissed += 1;
+    }
+  });
+  faangScore -= faangMissed * 15;
+  faangScore = Math.max(0, Math.round(faangScore));
+
+  // 3. Product MNC rating (medium questions coverage with 3+ medium per topic)
+  let productScore = (mediumTotal / 150) * 80 + (hardTotal / 50) * 20;
+  productScore = Math.min(100, productScore);
+
+  let productMissed = 0;
+  CORE_TOPICS.forEach(core => {
+    const t = breakdown.find(item => item.name.toLowerCase().includes(core.toLowerCase()));
+    if (!t || t.medium < 3) {
+      productMissed += 1;
+    }
+  });
+  productScore -= productMissed * 10;
+  productScore = Math.max(0, Math.round(productScore));
+
+  // 4. Service rating (easy questions coverage with 3+ easy per topic)
+  let serviceScore = (easyTotal / 100) * 100;
+  serviceScore = Math.min(100, serviceScore);
+
+  let serviceMissed = 0;
+  CORE_TOPICS.forEach(core => {
+    const t = breakdown.find(item => item.name.toLowerCase().includes(core.toLowerCase()));
+    if (!t || t.easy < 3) {
+      serviceMissed += 1;
+    }
+  });
+  serviceScore -= serviceMissed * 10;
+  serviceScore = Math.max(0, Math.round(serviceScore));
+
+  // Overall Score is the average of these three
+  const overallScore = Math.round((faangScore + productScore + serviceScore) / 3);
+
+  return {
+    faang: faangScore,
+    product: productScore,
+    service: serviceScore,
+    overall: overallScore
+  };
+}
+
 function buildCoachPrompt(analysis) {
   const topicSummary = analysis.topics
     .slice(0, 15)
     .map((topic) => `${topic.name}: ${topic.percentage.toFixed(1)}%`)
     .join(", ");
 
+  const scores = calculateBrutalScores(analysis);
+
   return [
     "You are an expert competitive programming coach and hiring evaluator.",
-    "Generate a practical 8-section report for this candidate.",
-    `Total solved: ${analysis.totals.solved}`,
-    `Easy/Medium/Hard: ${analysis.difficulty.easy.solved}/${analysis.difficulty.medium.solved}/${analysis.difficulty.hard.solved}`,
-    `Acceptance rate: ${analysis.acceptanceRate.toFixed(2)}`,
-    `Contest rating: ${analysis.contestRating.toFixed(0)}`,
-    `Topics: ${topicSummary || "No topic data"}`,
-    "Sections required: insights, skill score, company readiness, topic breakdown, weaknesses, 7-day plan, verdict, ETA to FAANG.",
+    "Generate a practical, beautiful 8-section report for this candidate based on their LeetCode profile statistics.",
+    "",
+    `### Candidate Stats:`,
+    `- Total solved: ${analysis.totals.solved}`,
+    `- Easy/Medium/Hard: ${analysis.difficulty.easy.solved}/${analysis.difficulty.medium.solved}/${analysis.difficulty.hard.solved}`,
+    `- Acceptance rate: ${analysis.acceptanceRate.toFixed(2)}%`,
+    `- Contest rating: ${analysis.contestRating.toFixed(0)}`,
+    `- Topics solved: ${topicSummary || "No topic data"}- `,
+    "",
+    "Format the report using the following EXACT section headers and structures:",
+    "",
+    "### Section 1: Insights",
+    "- Detail the candidate's general strengths and analysis in 2-3 bullet points.",
+    "",
+    "### Section 2: Skill Score",
+    `- Output the overall score out of 100 on the first line, exactly as: 'Overall Score: ${scores.overall}/100'.`,
+    "- Provide details about different skill domains like problem-solving, coding skills, algorithmic knowledge, and time management.",
+    "",
+    "### Section 3: Company Readiness",
+    "Evaluate readiness for each company tier. You MUST use this exact format for each tier:",
+    `- FAANG: ${scores.faang}/100`,
+    "Reason: [detailed explanation matching this score]",
+    `- Product-based: ${scores.product}/100`,
+    "Reason: [detailed explanation matching this score]",
+    `- Service-based: ${scores.service}/100`,
+    "Reason: [detailed explanation matching this score]",
+    "",
+    "### Section 4: Topic Breakdown",
+    "Provide a breakdown of major topics. Use this exact format:",
+    "- [Topic Name]:",
+    "[Analysis of their performance on this topic]",
+    "",
+    "### Section 5: Weaknesses",
+    "- List 2-3 specific weaknesses in coding or topic coverage.",
+    "",
+    "### Section 6: 7-Day Plan",
+    "- Detail a daily plan to improve their LeetCode/interview skills.",
+    "",
+    "### Section 7: Verdict",
+    "- Provide a final hiring/readiness verdict.",
+    "",
+    "### Section 8: ETA to FAANG",
+    "- State the estimated time/effort required to be FAANG-ready.",
   ].join("\n");
 }
 
@@ -960,15 +1173,25 @@ app.get("/api/analyze", optionalVerifyFirebaseToken, async (req, res) => {
       const remainingCredits = Number(userDoc.credits || 0);
 
       try {
-        await logSearchInFirestore({ username: analysis.username, req });
+        await logSearchForUser({
+          uid: req.authUser.uid,
+          username: analysis.username,
+          req,
+          type: "analysis",
+        });
       } catch (logError) {
-        console.error("Failed to log search in Firestore:", logError.message);
+        console.error("Failed to log user search:", logError.message);
       }
 
       return res.json({ ...analysis, remainingCredits });
     } else {
       // Unauthenticated / Anonymous search
       const analysis = await buildAnalysisData(username);
+      try {
+        await logSearchInFirestore({ username: analysis.username, req });
+      } catch (logError) {
+        console.error("Failed to log anonymous search in Firestore:", logError.message);
+      }
       return res.json({ ...analysis, remainingCredits: null });
     }
   } catch (error) {
@@ -1036,8 +1259,21 @@ app.post("/api/coach", optionalVerifyFirebaseToken, async (req, res) => {
     }
 
     let remainingCredits = null;
+    let reportId = null;
     if (req.authUser) {
       remainingCredits = await consumeOneCredit(req.authUser.uid);
+      try {
+        reportId = await logSearchForUser({
+          uid: req.authUser.uid,
+          username: analysis.username,
+          req,
+          type: "ai_report",
+          reportContent: report,
+          analysisData: analysis,
+        });
+      } catch (logError) {
+        console.error("Failed to log user AI report search:", logError.message);
+      }
     }
 
     return res.json({
@@ -1046,6 +1282,7 @@ app.post("/api/coach", optionalVerifyFirebaseToken, async (req, res) => {
       report,
       remainingCredits,
       snapshot: analysis,
+      reportId,
     });
   } catch (error) {
     const status = error.status || 500;
@@ -1056,6 +1293,477 @@ app.post("/api/coach", optionalVerifyFirebaseToken, async (req, res) => {
           : status === 402
             ? "You have no credits remaining."
             : "Unexpected error while generating coach report.",
+      details: error.message,
+    });
+  }
+});
+
+app.get("/api/reports/history", verifyFirebaseToken, async (req, res) => {
+  try {
+    const uid = req.authUser.uid;
+    const searchesRef = firestoreDb
+      .collection(REGISTERED_USERS_COLLECTION)
+      .doc(uid)
+      .collection("searches");
+
+    const snapshot = await searchesRef.get();
+
+    const reports = [];
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.type === "ai_report") {
+        reports.push({
+          id: doc.id,
+          username: data.username,
+          timestamp: data.timestamp,
+          report: data.report || "",
+          details: data.details || {
+            topicBreakdown: null,
+            weaknessAnalysis: null,
+            sixMonthPlan: {
+              month1: null,
+              month2: null,
+              month3: null,
+              month4: null,
+              month5: null,
+              month6: null
+            }
+          }
+        });
+      }
+    });
+
+    // Sort in-memory descending by timestamp
+    reports.sort((a, b) => {
+      const tA = a.timestamp?.toDate?.() ? a.timestamp.toDate() : (a.timestamp ? new Date(a.timestamp) : new Date(0));
+      const tB = b.timestamp?.toDate?.() ? b.timestamp.toDate() : (b.timestamp ? new Date(b.timestamp) : new Date(0));
+      return tB - tA;
+    });
+
+    // Format timestamps to ISO strings
+    reports.forEach((r) => {
+      if (r.timestamp?.toDate?.()) {
+        r.timestamp = r.timestamp.toDate().toISOString();
+      } else if (r.timestamp) {
+        r.timestamp = new Date(r.timestamp).toISOString();
+      } else {
+        r.timestamp = new Date(0).toISOString();
+      }
+    });
+
+    return res.json(reports);
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to load report history.", details: error.message });
+  }
+});
+
+app.get("/api/search-history", verifyFirebaseToken, async (req, res) => {
+  try {
+    const uid = req.authUser.uid;
+    const searchesRef = firestoreDb
+      .collection(REGISTERED_USERS_COLLECTION)
+      .doc(uid)
+      .collection("searches");
+
+    const snapshot = await searchesRef.get();
+
+    const recentSearches = [];
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.type === "analysis" && data.username) {
+        recentSearches.push({
+          id: doc.id,
+          username: data.username,
+          timestamp: data.timestamp,
+        });
+      }
+    });
+
+    recentSearches.sort((a, b) => {
+      const tA = a.timestamp?.toDate?.()
+        ? a.timestamp.toDate()
+        : (a.timestamp ? new Date(a.timestamp) : new Date(0));
+      const tB = b.timestamp?.toDate?.()
+        ? b.timestamp.toDate()
+        : (b.timestamp ? new Date(b.timestamp) : new Date(0));
+      return tB - tA;
+    });
+
+    const deduped = [];
+    const seen = new Set();
+
+    for (const item of recentSearches) {
+      const key = item.username.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      deduped.push({
+        ...item,
+        timestamp: item.timestamp?.toDate?.()
+          ? item.timestamp.toDate().toISOString()
+          : (item.timestamp ? new Date(item.timestamp).toISOString() : new Date(0).toISOString()),
+      });
+      if (deduped.length >= 3) {
+        break;
+      }
+    }
+
+    return res.json(deduped);
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to load search history.", details: error.message });
+  }
+});
+
+app.get("/api/reports/:id", verifyFirebaseToken, async (req, res) => {
+  try {
+    const uid = req.authUser.uid;
+    const reportId = req.params.id;
+
+    const docRef = firestoreDb
+      .collection(REGISTERED_USERS_COLLECTION)
+      .doc(uid)
+      .collection("searches")
+      .doc(reportId);
+
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      return res.status(404).json({ error: "Report not found." });
+    }
+
+    const data = docSnap.data();
+    return res.json({
+      id: docSnap.id,
+      username: data.username,
+      timestamp: data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : data.timestamp,
+      report: data.report || "",
+      details: data.details || {
+        topicBreakdown: null,
+        weaknessAnalysis: null,
+        sixMonthPlan: {
+          month1: null,
+          month2: null,
+          month3: null,
+          month4: null,
+          month5: null,
+          month6: null
+        }
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to fetch report details.", details: error.message });
+  }
+});
+
+app.post("/api/reports/:id/unlock-topics", verifyFirebaseToken, async (req, res) => {
+  try {
+    const uid = req.authUser.uid;
+    const reportId = req.params.id;
+
+    await requireAvailableCredit(uid);
+
+    const docRef = firestoreDb
+      .collection(REGISTERED_USERS_COLLECTION)
+      .doc(uid)
+      .collection("searches")
+      .doc(reportId);
+
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      return res.status(404).json({ error: "Report not found." });
+    }
+
+    const reportData = docSnap.data();
+    const analysis = reportData.analysisData;
+    if (!analysis) {
+      return res.status(400).json({ error: "No analysis data found inside report." });
+    }
+
+    const details = reportData.details || {};
+    if (details.topicBreakdown) {
+      return res.json({ details, message: "Already unlocked." });
+    }
+
+    const topicSummary = (analysis.topics || [])
+      .slice(0, 15)
+      .map((topic) => `${topic.name}: ${topic.percentage.toFixed(1)}%`)
+      .join(", ");
+
+    const prompt = [
+      "You are an expert competitive programming coach and technical interviewer.",
+      "Write a highly detailed, deep topic-by-topic evaluation of the candidate's strengths and weaknesses, and list exactly what advanced algorithms/topics they need to cover.",
+      "",
+      "Candidate Stats:",
+      `- Total solved: ${analysis.totals.solved}`,
+      `- Easy/Medium/Hard: ${analysis.difficulty.easy.solved}/${analysis.difficulty.medium.solved}/${analysis.difficulty.hard.solved}`,
+      `- Acceptance rate: ${analysis.acceptanceRate.toFixed(2)}%`,
+      `- Topics solved: ${topicSummary || "No topic data"}- `,
+      "",
+      "Please explain deeply:",
+      "1. Which topics are their absolute strengths (and why, based on stats).",
+      "2. Which topics are their weaknesses (and why, e.g. Dynamic Programming, Graph, Trees, etc.).",
+      "3. Exactly what advanced algorithms, sub-topics, or concepts they need to master for each of these areas (e.g. for DP: knapsack, digit DP, LCS; for Graph: Dijkstra, Prim, Union-Find).",
+      "Format the output as clean markdown without any surrounding conversation."
+    ].join("\n");
+
+    const response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        temperature: 0.3,
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert competitive programming coach. Follow instructions exactly.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error?.message || "Groq API request failed.");
+    }
+
+    const detailedTopics = payload.choices?.[0]?.message?.content;
+    if (!detailedTopics) {
+      throw new Error("Groq returned an empty response.");
+    }
+
+    const remainingCredits = await consumeOneCredit(uid);
+
+    details.topicBreakdown = detailedTopics;
+    await docRef.update({ details });
+
+    return res.json({ details, remainingCredits });
+  } catch (error) {
+    const status = error.status || 500;
+    return res.status(status).json({
+      error: status === 402 ? "You have no credits remaining." : "Failed to unlock detailed topic breakdown.",
+      details: error.message,
+    });
+  }
+});
+
+app.post("/api/reports/:id/unlock-weaknesses", verifyFirebaseToken, async (req, res) => {
+  try {
+    const uid = req.authUser.uid;
+    const reportId = req.params.id;
+
+    await requireAvailableCredit(uid);
+
+    const docRef = firestoreDb
+      .collection(REGISTERED_USERS_COLLECTION)
+      .doc(uid)
+      .collection("searches")
+      .doc(reportId);
+
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      return res.status(404).json({ error: "Report not found." });
+    }
+
+    const reportData = docSnap.data();
+    const analysis = reportData.analysisData;
+    if (!analysis) {
+      return res.status(400).json({ error: "No analysis data found inside report." });
+    }
+
+    const details = reportData.details || {};
+    if (details.weaknessAnalysis) {
+      return res.json({ details, message: "Already unlocked." });
+    }
+
+    const topicSummary = (analysis.topics || [])
+      .slice(0, 15)
+      .map((topic) => `${topic.name}: ${topic.percentage.toFixed(1)}%`)
+      .join(", ");
+
+    const prompt = [
+      "You are an expert competitive programming coach and technical interviewer.",
+      "Provide a highly detailed, critical analysis of the candidate's weaknesses and how to overcome them.",
+      "",
+      "Candidate Stats:",
+      `- Total solved: ${analysis.totals.solved}`,
+      `- Easy/Medium/Hard: ${analysis.difficulty.easy.solved}/${analysis.difficulty.medium.solved}/${analysis.difficulty.hard.solved}`,
+      `- Acceptance rate: ${analysis.acceptanceRate.toFixed(2)}%`,
+      `- Topics solved: ${topicSummary || "No topic data"}- `,
+      "",
+      "Please explain deeply:",
+      "1. The primary gaps in their problem-solving (e.g. lack of hard questions, low acceptance rate, contest rating issues).",
+      "2. Specific algorithmic weaknesses.",
+      "3. Actionable strategies, resources, or coding practices they should adopt to address these weaknesses.",
+      "Format the output as clean markdown without any surrounding conversation."
+    ].join("\n");
+
+    const response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        temperature: 0.3,
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert competitive programming coach. Follow instructions exactly.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error?.message || "Groq API request failed.");
+    }
+
+    const detailedWeakness = payload.choices?.[0]?.message?.content;
+    if (!detailedWeakness) {
+      throw new Error("Groq returned an empty response.");
+    }
+
+    const remainingCredits = await consumeOneCredit(uid);
+
+    details.weaknessAnalysis = detailedWeakness;
+    await docRef.update({ details });
+
+    return res.json({ details, remainingCredits });
+  } catch (error) {
+    const status = error.status || 500;
+    return res.status(status).json({
+      error: status === 402 ? "You have no credits remaining." : "Failed to unlock detailed weaknesses.",
+      details: error.message,
+    });
+  }
+});
+
+app.post("/api/reports/:id/unlock-month", verifyFirebaseToken, async (req, res) => {
+  try {
+    const uid = req.authUser.uid;
+    const reportId = req.params.id;
+    const month = Number(req.body.month);
+
+    if (!month || month < 1 || month > 6) {
+      return res.status(400).json({ error: "Invalid month. Must be between 1 and 6." });
+    }
+
+    await requireAvailableCredit(uid);
+
+    const docRef = firestoreDb
+      .collection(REGISTERED_USERS_COLLECTION)
+      .doc(uid)
+      .collection("searches")
+      .doc(reportId);
+
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      return res.status(404).json({ error: "Report not found." });
+    }
+
+    const reportData = docSnap.data();
+    const analysis = reportData.analysisData;
+    if (!analysis) {
+      return res.status(400).json({ error: "No analysis data found inside report." });
+    }
+
+    const details = reportData.details || {
+      topicBreakdown: null,
+      weaknessAnalysis: null,
+      sixMonthPlan: { month1: null, month2: null, month3: null, month4: null, month5: null, month6: null }
+    };
+    
+    if (!details.sixMonthPlan) {
+      details.sixMonthPlan = { month1: null, month2: null, month3: null, month4: null, month5: null, month6: null };
+    }
+
+    const monthKey = `month${month}`;
+    if (details.sixMonthPlan[monthKey]) {
+      return res.json({ details, message: "Already unlocked." });
+    }
+
+    const topicSummary = (analysis.topics || [])
+      .slice(0, 15)
+      .map((topic) => `${topic.name}: ${topic.percentage.toFixed(1)}%`)
+      .join(", ");
+
+    const prompt = [
+      "You are an expert competitive programming coach.",
+      `Provide a detailed, day-by-day practice plan for Month ${month} (Days 1 to 30) of a 6-month roadmap, based on the candidate's LeetCode profile.`,
+      "",
+      "Candidate Stats:",
+      `- Total solved: ${analysis.totals.solved}`,
+      `- Easy/Medium/Hard: ${analysis.difficulty.easy.solved}/${analysis.difficulty.medium.solved}/${analysis.difficulty.hard.solved}`,
+      `- Acceptance rate: ${analysis.acceptanceRate.toFixed(2)}%`,
+      `- Topics solved: ${topicSummary || "No topic data"}- `,
+      "",
+      `This is Month ${month} of their 6-month preparation plan.`,
+      month === 1 
+        ? "Since the user has already covered basic arrays and string topics, focus on upcoming intermediate topics to cover from day 1 to day 30, along with a structured revision plan for arrays/strings."
+        : `Focus on intermediate to advanced topics for Month ${month}, keeping in mind they should cover advanced concepts they haven't mastered yet. Include weekly revisions.`,
+      "",
+      "Specify:",
+      "- Exactly which topics and concepts to cover each day.",
+      "- Recommended LeetCode problem types and patterns for each day.",
+      "- A weekly revision and mock interview schedule.",
+      "Format the output as clean markdown without any surrounding conversation."
+    ].join("\n");
+
+    const response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        temperature: 0.3,
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert competitive programming coach. Follow instructions exactly.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error?.message || "Groq API request failed.");
+    }
+
+    const detailedMonthPlan = payload.choices?.[0]?.message?.content;
+    if (!detailedMonthPlan) {
+      throw new Error("Groq returned an empty response.");
+    }
+
+    const remainingCredits = await consumeOneCredit(uid);
+
+    details.sixMonthPlan[monthKey] = detailedMonthPlan;
+    await docRef.update({ details });
+
+    return res.json({ details, remainingCredits });
+  } catch (error) {
+    const status = error.status || 500;
+    return res.status(status).json({
+      error: status === 402 ? "You have no credits remaining." : `Failed to unlock Month ${month} plan.`,
       details: error.message,
     });
   }

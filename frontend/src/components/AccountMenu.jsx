@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 
-export default function AccountMenu({ onLogin, onProfileClick, onCreditsClick }) {
+export default function AccountMenu({ onLogin, onProfileClick, onCreditsClick, onHistoryClick }) {
   const { currentUser, userProfile, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
@@ -92,6 +92,20 @@ export default function AccountMenu({ onLogin, onProfileClick, onCreditsClick })
                 <line x1="8" y1="12" x2="16" y2="12"/>
               </svg>
               <span>Credits</span>
+            </button>
+
+            <button
+              type="button"
+              className="popover-item-premium"
+              onClick={() => {
+                onHistoryClick?.();
+                setOpen(false);
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12h3l3 8 4-16 3 8h3" />
+              </svg>
+              <span>History</span>
             </button>
 
             <hr className="popover-divider-premium" />
