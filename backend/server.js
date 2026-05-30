@@ -4,24 +4,491 @@ const dotenv = require("dotenv");
 const path = require("path");
 const fs = require("fs");
 
+let admin = null;
+try {
+  admin = require("firebase-admin");
+} catch (_error) {
+  admin = null;
+}
+
 dotenv.config({ path: path.join(__dirname, ".env") });
 
 const app = express();
-const PORT = process.env.PORT || 5000;
-const FRONTEND_BUILD_DIR = path.join(__dirname, "dist");
-const FRONTEND_LEGACY_DIR = path.join(__dirname, "public");
-const frontendDir = fs.existsSync(path.join(FRONTEND_BUILD_DIR, "index.html"))
-  ? FRONTEND_BUILD_DIR
-  : FRONTEND_LEGACY_DIR;
+const PORT = Number(process.env.PORT || 5000);
+const FRONTEND_DIST_DIR = path.join(__dirname, "dist");
+const FRONTEND_BUILD_DIR = path.join(__dirname, "build");
+const LEGACY_PUBLIC_DIR = path.join(__dirname, "public");
 const LEETCODE_GRAPHQL = "https://leetcode.com/graphql";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const REGISTERED_USERS_COLLECTION = "registered_users";
+const FIRESTORE_USER_SEARCH_COLLECTION = "user_searches";
+const DEFAULT_USER_CREDITS = 3;
+const CREDIT_PACKAGES = {
+  "10_rs19": { credits: 10, priceRs: 19 },
+  "20_rs29": { credits: 20, priceRs: 29 },
+  "50_rs49": { credits: 50, priceRs: 49 },
+  "100_rs79": { credits: 100, priceRs: 79 },
+};
 
+app.set("trust proxy", true);
 app.use(cors());
 app.use(express.json());
 
+let firestoreDb = null;
+
+function parseServiceAccountFromEnv() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!raw) {
+    return null;
+  }
+
+  const parsed = JSON.parse(raw);
+  if (parsed && typeof parsed.private_key === "string") {
+    parsed.private_key = parsed.private_key.replace(/\\n/g, "\n");
+  }
+
+  return parsed;
+}
+
+function initFirestore() {
+  if (!admin) {
+    console.warn("Firebase Admin SDK is not installed or failed to import.");
+    return null;
+  }
+
+  try {
+    if (!admin.apps.length) {
+      if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+        const serviceAccount = parseServiceAccountFromEnv();
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+        });
+        console.log("Firebase Admin SDK initialized successfully using FIREBASE_SERVICE_ACCOUNT_JSON.");
+      } else {
+        console.warn(
+          "\n[Firebase Warning] FIREBASE_SERVICE_ACCOUNT_JSON environment variable is not set.\n" +
+          "If you are running the server locally, you MUST add your service account credentials to backend/.env in order to connect to Firestore.\n" +
+          "Example:\n" +
+          "FIREBASE_SERVICE_ACCOUNT_JSON={\\\"type\\\": \\\"service_account\\\", \\\"project_id\\\": \\\"leetlens\\\", ...}\n"
+        );
+        admin.initializeApp({
+          projectId: "leetlens",
+        });
+      }
+    }
+
+    const dbInstance = admin.firestore();
+    console.log("Firestore database connection established successfully.");
+    return dbInstance;
+  } catch (error) {
+    console.error("\n[Firebase Error] Firestore initialization failed:", error.message);
+    console.error("Please check your service account configuration in backend/.env.\n");
+    return null;
+  }
+}
+
+firestoreDb = initFirestore();
+
+function isAuthSystemReady() {
+  return Boolean(admin && firestoreDb);
+}
+
+function getClientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0].trim();
+  }
+
+  const realIp = req.headers["x-real-ip"];
+  if (typeof realIp === "string" && realIp.trim()) {
+    return realIp.trim();
+  }
+
+  return req.ip || "unknown";
+}
+
+function getBearerToken(req) {
+  const authHeader = req.headers.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    return "";
+  }
+
+  return authHeader.slice(7).trim();
+}
+
+async function verifyFirebaseToken(req, res, next) {
+  if (!isAuthSystemReady()) {
+    return res.status(503).json({
+      error: "Authentication service is not configured on the backend.",
+    });
+  }
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ error: "Missing Bearer token." });
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.authUser = decoded;
+    return next();
+  } catch (_error) {
+    console.error("Firebase token verification failed:", _error.message);
+    return res.status(401).json({
+      error: "Invalid authentication token.",
+      details: _error.message,
+    });
+  }
+}
+
+async function optionalVerifyFirebaseToken(req, res, next) {
+  if (!isAuthSystemReady()) {
+    req.authUser = null;
+    return next();
+  }
+
+  const token = getBearerToken(req);
+  if (!token) {
+    req.authUser = null;
+    return next();
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.authUser = decoded;
+    return next();
+  } catch (_error) {
+    console.warn("Optional Firebase token verification failed:", _error.message);
+    req.authUser = null;
+    return next();
+  }
+}
+
+function getUserRef(uid) {
+  return firestoreDb.collection(REGISTERED_USERS_COLLECTION).doc(uid);
+}
+
+function toDocSafeId(value) {
+  return value.toString().trim().replaceAll("/", "_") || "unknown";
+}
+
+function normalizeIp(ip) {
+  const raw = (ip || "").toString().trim();
+  if (!raw) {
+    return "unknown";
+  }
+
+  return raw.replace(/^::ffff:/, "");
+}
+
+function getDateFolderUtc(now = new Date()) {
+  return now.toISOString().slice(0, 10);
+}
+
+function detectDeviceType(userAgent) {
+  const ua = (userAgent || "").toLowerCase();
+  if (!ua) {
+    return "desktop";
+  }
+
+  if (/tablet|ipad/.test(ua)) {
+    return "tablet";
+  }
+
+  if (/mobile|android|iphone/.test(ua)) {
+    return "mobile";
+  }
+
+  return "desktop";
+}
+
+function getDeviceInfoFromRequest(req) {
+  const userAgent = (req.headers["user-agent"] || "").toString();
+  const ua = userAgent.toLowerCase();
+
+  let os = "Unknown";
+  if (ua.includes("windows")) {
+    os = "Windows";
+  } else if (ua.includes("android")) {
+    os = "Android";
+  } else if (
+    ua.includes("iphone") ||
+    ua.includes("ipad") ||
+    ua.includes("ios")
+  ) {
+    os = "iOS";
+  } else if (ua.includes("mac os") || ua.includes("macintosh")) {
+    os = "macOS";
+  } else if (ua.includes("linux")) {
+    os = "Linux";
+  }
+
+  let browser = "Unknown";
+  if (ua.includes("edg/")) {
+    browser = "Edge";
+  } else if (ua.includes("chrome/")) {
+    browser = "Chrome";
+  } else if (ua.includes("safari/") && !ua.includes("chrome/")) {
+    browser = "Safari";
+  } else if (ua.includes("firefox/")) {
+    browser = "Firefox";
+  }
+
+  return {
+    vendor: "Unknown",
+    model: "Unknown",
+    type: detectDeviceType(userAgent),
+    os,
+    browser,
+  };
+}
+
+function hasPayloadKey(input, key) {
+  return Object.prototype.hasOwnProperty.call(input, key);
+}
+
+function sanitizeProfilePayload(payload) {
+  const input = payload || {};
+  const updates = {};
+
+  if (hasPayloadKey(input, "name")) {
+    updates.name = (input.name || "").toString().trim().slice(0, 80);
+  }
+
+  if (hasPayloadKey(input, "dob")) {
+    updates.dob = (input.dob || "").toString().trim().slice(0, 10);
+  }
+
+  if (hasPayloadKey(input, "age")) {
+    updates.age = Number.isFinite(Number(input.age))
+      ? Math.max(0, Math.min(120, Number(input.age)))
+      : 0;
+  }
+
+  if (hasPayloadKey(input, "location")) {
+    updates.location = (input.location || "").toString().trim().slice(0, 120);
+  }
+
+  if (hasPayloadKey(input, "bio")) {
+    updates.bio = (input.bio || "").toString().trim().slice(0, 500);
+  }
+
+  return updates;
+}
+
+function toPublicUserProfile(uid, data, authUser) {
+  return {
+    uid,
+    name: data.name || authUser?.name || "",
+    email: data.email || authUser?.email || "",
+    age: Number(data.age || 0),
+    dob: data.dob || "",
+    location: data.location || "",
+    bio: data.bio || "",
+    ipAddress: data.ipAddress || "",
+    credits: Number(data.credits || 0),
+    lastClaimedFreeCredits: data.lastClaimedFreeCredits
+      ? (typeof data.lastClaimedFreeCredits.toDate === "function"
+        ? data.lastClaimedFreeCredits.toDate().toISOString()
+        : data.lastClaimedFreeCredits)
+      : null,
+  };
+}
+
+async function ensureUserDocument(authUser, req) {
+  const ref = getUserRef(authUser.uid);
+  const snap = await ref.get();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  const baseData = {
+    email: authUser.email || "",
+    name: authUser.name || "",
+    age: 0,
+    dob: "",
+    location: "",
+    bio: "",
+    ipAddress: req ? getClientIp(req) : "",
+    updatedAt: now,
+  };
+
+  if (!snap.exists) {
+    await ref.set({
+      ...baseData,
+      credits: DEFAULT_USER_CREDITS,
+      createdAt: now,
+    });
+  } else {
+    const updates = {
+      email: authUser.email || snap.data()?.email || "",
+      ipAddress: req ? getClientIp(req) : snap.data()?.ipAddress || "",
+      updatedAt: now,
+    };
+
+    if (!snap.data()?.name && authUser.name) {
+      updates.name = authUser.name;
+    }
+
+    await ref.set(updates, { merge: true });
+  }
+
+  const latest = await ref.get();
+  return latest.data() || {};
+}
+
+async function consumeOneCredit(uid) {
+  const ref = getUserRef(uid);
+
+  return firestoreDb.runTransaction(async (txn) => {
+    const snap = await txn.get(ref);
+    const data = snap.data() || {};
+    const credits = Number(data.credits || 0);
+
+    if (credits <= 0) {
+      const noCreditsError = new Error("You have no credits remaining.");
+      noCreditsError.status = 402;
+      throw noCreditsError;
+    }
+
+    const nextCredits = credits - 1;
+    txn.set(
+      ref,
+      {
+        credits: nextCredits,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    return nextCredits;
+  });
+}
+
+async function requireAvailableCredit(uid) {
+  const snap = await getUserRef(uid).get();
+  const credits = Number(snap.data()?.credits || 0);
+
+  if (credits <= 0) {
+    const noCreditsError = new Error("You have no credits remaining.");
+    noCreditsError.status = 402;
+    throw noCreditsError;
+  }
+
+  return credits;
+}
+
+async function addCreditsForPackage(uid, packageKey) {
+  const pkg = CREDIT_PACKAGES[packageKey];
+  if (!pkg) {
+    const badPackageError = new Error("Invalid credits package selected.");
+    badPackageError.status = 400;
+    throw badPackageError;
+  }
+
+  const ref = getUserRef(uid);
+
+  return firestoreDb.runTransaction(async (txn) => {
+    const snap = await txn.get(ref);
+    const data = snap.data() || {};
+    const currentCredits = Number(data.credits || 0);
+    const nextCredits = currentCredits + pkg.credits;
+
+    txn.set(
+      ref,
+      {
+        credits: nextCredits,
+        lastPurchase: {
+          packageKey,
+          credits: pkg.credits,
+          amountRs: pkg.priceRs,
+          purchasedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    return {
+      credits: nextCredits,
+      package: pkg,
+    };
+  });
+}
+
+async function logSearchInFirestore({ username, req }) {
+  if (!firestoreDb || !admin) {
+    return;
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  const ipAddress = normalizeIp(req ? getClientIp(req) : "");
+  const visitorId = toDocSafeId(ipAddress);
+  const dayFolder = getDateFolderUtc();
+  const deviceInfo = req
+    ? getDeviceInfoFromRequest(req)
+    : {
+        vendor: "Unknown",
+        model: "Unknown",
+        type: "desktop",
+        os: "Unknown",
+        browser: "Unknown",
+      };
+
+  const dailyVisitorRef = firestoreDb
+    .collection(FIRESTORE_USER_SEARCH_COLLECTION)
+    .doc(dayFolder)
+    .collection("visitors")
+    .doc(visitorId);
+  const dailySearchRef = dailyVisitorRef.collection("searches").doc();
+
+  const usernameDocId = toDocSafeId(username.toLowerCase());
+  const userSearchRef = firestoreDb
+    .collection(FIRESTORE_USER_SEARCH_COLLECTION)
+    .doc(usernameDocId);
+  const userSearchEventRef = userSearchRef.collection("searches").doc();
+
+  const batch = firestoreDb.batch();
+  batch.set(
+    dailyVisitorRef,
+    {
+      visitor_id: visitorId,
+      ip: ipAddress,
+      device: deviceInfo,
+      searchCount: admin.firestore.FieldValue.increment(1),
+      last_visited_at: now,
+      first_visited_at: now,
+    },
+    { merge: true },
+  );
+  batch.set(dailySearchRef, {
+    username,
+    timestamp: now,
+  });
+  batch.set(
+    userSearchRef,
+    {
+      username,
+      count: admin.firestore.FieldValue.increment(1),
+      lastSearchedAt: now,
+      firstSearchedAt: now,
+    },
+    { merge: true },
+  );
+  batch.set(userSearchEventRef, {
+    username,
+    searchedAt: now,
+  });
+
+  await batch.commit();
+}
+
 const ANALYZE_QUERY = `
-  query userPublicProfile($username: String!) {
+  query userProblemsSolved($username: String!) {
+    allQuestionsCount {
+      difficulty
+      count
+    }
     matchedUser(username: $username) {
       username
       profile {
@@ -36,7 +503,7 @@ const ANALYZE_QUERY = `
         }
       }
       tagProblemCounts {
-        advanced {
+        fundamental {
           tagName
           problemsSolved
         }
@@ -44,26 +511,10 @@ const ANALYZE_QUERY = `
           tagName
           problemsSolved
         }
-        fundamental {
+        advanced {
           tagName
           problemsSolved
         }
-      }
-    }
-    allQuestionsCount {
-      difficulty
-      count
-    }
-  }
-`;
-
-const RECENT_SOLVED_QUERY_USER_NODE = `
-  query recentAcceptedFromUserNode($username: String!) {
-    matchedUser(username: $username) {
-      recentAcSubmissionList(limit: 30) {
-        title
-        titleSlug
-        timestamp
       }
     }
   }
@@ -112,7 +563,7 @@ const CALENDAR_QUERY = `
 
 function getDifficultyCount(source, difficulty) {
   const entry = source.find((item) => item.difficulty === difficulty);
-  return entry ? entry.count : 0;
+  return entry ? Number(entry.count || 0) : 0;
 }
 
 async function postLeetCodeQuery(username, query) {
@@ -140,201 +591,52 @@ async function postLeetCodeQuery(username, query) {
   return payload.data;
 }
 
-function buildTopicsData(topicSources, totalSolved) {
-  const topicMap = new Map();
-
-  ["fundamental", "intermediate", "advanced"].forEach((level) => {
-    (topicSources[level] || []).forEach((item) => {
-      if (!item.tagName) {
-        return;
-      }
-      const previous = topicMap.get(item.tagName) || 0;
-      topicMap.set(item.tagName, previous + (item.problemsSolved || 0));
-    });
+async function fetchRecentSolvedProblems(username) {
+  const payload = await postLeetCodeQuery(
+    username,
+    RECENT_SOLVED_QUERY_ROOT,
+  ).catch(async () => {
+    return postLeetCodeQuery(username, RECENT_SUBMISSIONS_QUERY_ROOT);
   });
 
-  return [...topicMap.entries()]
-    .map(([name, solvedCount]) => ({
-      name,
-      solved: solvedCount,
-      percentage: totalSolved > 0 ? (solvedCount / totalSolved) * 100 : 0,
-    }))
-    .sort((a, b) => b.solved - a.solved);
-}
-
-function getRecentActivity(calendarData) {
-  if (!calendarData?.submissionCalendar) {
-    return {
-      last30DaysSubmissions: 0,
-      streak: 0,
-      consistency: "No data",
-      dailyHeatmap: [],
-    };
-  }
-
-  let submissionMap = {};
-  try {
-    submissionMap = JSON.parse(calendarData.submissionCalendar);
-    if (typeof submissionMap === "string") {
-      submissionMap = JSON.parse(submissionMap);
-    }
-  } catch (_error) {
-    submissionMap = {};
-  }
-
-  const nowSec = Math.floor(Date.now() / 1000);
-  const windowStart = nowSec - 30 * 24 * 60 * 60;
-  let last30DaysSubmissions = 0;
-  let activeDays = 0;
-
-  Object.entries(submissionMap).forEach(([timestamp, count]) => {
-    const ts = Number(timestamp);
-    if (ts >= windowStart && ts <= nowSec) {
-      last30DaysSubmissions += Number(count || 0);
-      if (Number(count || 0) > 0) {
-        activeDays += 1;
-      }
-    }
-  });
-
-  const consistencyRatio = activeDays / 30;
-  let consistency = "Low";
-  if (consistencyRatio >= 0.7) {
-    consistency = "High";
-  } else if (consistencyRatio >= 0.4) {
-    consistency = "Medium";
-  }
-
-  return {
-    last30DaysSubmissions,
-    streak: calendarData.streak || 0,
-    consistency,
-    dailyHeatmap: buildDailyHeatmap(submissionMap, 365),
-  };
-}
-
-function buildDailyHeatmap(submissionMap, days) {
-  const dayCountMap = {};
-  Object.entries(submissionMap).forEach(([timestamp, count]) => {
-    const d = new Date(Number(timestamp) * 1000);
-    const dayKey = d.toISOString().slice(0, 10);
-    dayCountMap[dayKey] = (dayCountMap[dayKey] || 0) + Number(count || 0);
-  });
-
-  const now = new Date();
-  const todayUtc = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-
-  const points = [];
-  for (let i = days - 1; i >= 0; i -= 1) {
-    const d = new Date(todayUtc);
-    d.setUTCDate(todayUtc.getUTCDate() - i);
-    const dayKey = d.toISOString().slice(0, 10);
-    const count = Number(dayCountMap[dayKey] || 0);
-    points.push({
-      date: dayKey,
-      count,
-    });
-  }
-
-  return points;
-}
-
-function buildRecentSolvedProblems(recentAcSubmissionList) {
-  return (recentAcSubmissionList || []).map((item) => {
-    const ts = Number(item.timestamp || 0);
-    return {
+  const source =
+    payload?.recentAcSubmissionList || payload?.recentSubmissionList || [];
+  return source
+    .filter(
+      (item) =>
+        !item.statusDisplay ||
+        (item.statusDisplay || "").toLowerCase() === "accepted",
+    )
+    .map((item) => ({
       title: item.title || "Unknown Problem",
       titleSlug: item.titleSlug || "",
-      solvedAtEpoch: ts,
-      solvedAtIso: ts > 0 ? new Date(ts * 1000).toISOString() : null,
+      solvedAtEpoch: Number(item.timestamp || 0),
+      solvedAtIso:
+        Number(item.timestamp || 0) > 0
+          ? new Date(Number(item.timestamp) * 1000).toISOString()
+          : null,
       url: item.titleSlug
         ? `https://leetcode.com/problems/${item.titleSlug}/`
         : null,
-    };
-  });
+    }));
 }
 
-function buildTimingInsights(recentSolvedProblems, last30DaysSubmissions) {
-  if (!recentSolvedProblems.length) {
-    return {
-      avgAcceptedPerDayLast30: 0,
-      avgHoursBetweenAccepted: null,
-      lastSolvedAtIso: null,
-      recentAcceptedCount: 0,
-    };
-  }
+function buildCoachPrompt(analysis) {
+  const topicSummary = analysis.topics
+    .slice(0, 15)
+    .map((topic) => `${topic.name}: ${topic.percentage.toFixed(1)}%`)
+    .join(", ");
 
-  const solvedWithTime = recentSolvedProblems
-    .filter((item) => Number(item.solvedAtEpoch) > 0)
-    .sort((a, b) => b.solvedAtEpoch - a.solvedAtEpoch);
-
-  let totalGapSeconds = 0;
-  let gapCount = 0;
-  for (let i = 0; i < solvedWithTime.length - 1; i += 1) {
-    const gap =
-      solvedWithTime[i].solvedAtEpoch - solvedWithTime[i + 1].solvedAtEpoch;
-    if (gap > 0) {
-      totalGapSeconds += gap;
-      gapCount += 1;
-    }
-  }
-
-  const avgHoursBetweenAccepted =
-    gapCount > 0
-      ? Number((totalGapSeconds / gapCount / 3600).toFixed(2))
-      : null;
-
-  return {
-    avgAcceptedPerDayLast30: Number((last30DaysSubmissions / 30).toFixed(2)),
-    avgHoursBetweenAccepted,
-    lastSolvedAtIso: solvedWithTime[0]?.solvedAtIso || null,
-    recentAcceptedCount: solvedWithTime.length,
-  };
-}
-
-function pickRecentAcceptedSubmissions(payload) {
-  const fromUserNode = payload?.matchedUser?.recentAcSubmissionList;
-  if (Array.isArray(fromUserNode) && fromUserNode.length) {
-    return fromUserNode;
-  }
-
-  const fromRootAccepted = payload?.recentAcSubmissionList;
-  if (Array.isArray(fromRootAccepted) && fromRootAccepted.length) {
-    return fromRootAccepted;
-  }
-
-  const fromRootRecent = payload?.recentSubmissionList;
-  if (Array.isArray(fromRootRecent) && fromRootRecent.length) {
-    return fromRootRecent.filter(
-      (item) => (item.statusDisplay || "").toLowerCase() === "accepted",
-    );
-  }
-
-  return [];
-}
-
-async function fetchRecentSolvedProblems(username) {
-  const candidateQueries = [
-    RECENT_SOLVED_QUERY_USER_NODE,
-    RECENT_SOLVED_QUERY_ROOT,
-    RECENT_SUBMISSIONS_QUERY_ROOT,
-  ];
-
-  for (const query of candidateQueries) {
-    try {
-      const payload = await postLeetCodeQuery(username, query);
-      const picked = pickRecentAcceptedSubmissions(payload);
-      if (picked.length) {
-        return buildRecentSolvedProblems(picked);
-      }
-    } catch (_error) {
-      // LeetCode schema can vary between deployments; fall through to next query shape.
-    }
-  }
-
-  return [];
+  return [
+    "You are an expert competitive programming coach and hiring evaluator.",
+    "Generate a practical 8-section report for this candidate.",
+    `Total solved: ${analysis.totals.solved}`,
+    `Easy/Medium/Hard: ${analysis.difficulty.easy.solved}/${analysis.difficulty.medium.solved}/${analysis.difficulty.hard.solved}`,
+    `Acceptance rate: ${analysis.acceptanceRate.toFixed(2)}`,
+    `Contest rating: ${analysis.contestRating.toFixed(0)}`,
+    `Topics: ${topicSummary || "No topic data"}`,
+    "Sections required: insights, skill score, company readiness, topic breakdown, weaknesses, 7-day plan, verdict, ETA to FAANG.",
+  ].join("\n");
 }
 
 async function buildAnalysisData(username) {
@@ -351,8 +653,9 @@ async function buildAnalysisData(username) {
   const totals = coreData?.allQuestionsCount || [];
 
   const totalSolved = getDifficultyCount(solved, "All");
-  const totalSubmissions =
-    solved.find((item) => item.difficulty === "All")?.submissions || 0;
+  const totalSubmissions = Number(
+    solved.find((item) => item.difficulty === "All")?.submissions || 0,
+  );
   const totalQuestions = getDifficultyCount(totals, "All");
 
   const easySolved = getDifficultyCount(solved, "Easy");
@@ -363,11 +666,31 @@ async function buildAnalysisData(username) {
   const mediumTotal = getDifficultyCount(totals, "Medium");
   const hardTotal = getDifficultyCount(totals, "Hard");
 
-  const topics = buildTopicsData(
-    matchedUser.tagProblemCounts || {},
-    totalSolved,
+  const tagBuckets = matchedUser.tagProblemCounts || {};
+  const topicMap = new Map();
+  ["fundamental", "intermediate", "advanced"].forEach((bucket) => {
+    (tagBuckets[bucket] || []).forEach((item) => {
+      if (!item.tagName) {
+        return;
+      }
+      topicMap.set(
+        item.tagName,
+        (topicMap.get(item.tagName) || 0) + Number(item.problemsSolved || 0),
+      );
+    });
+  });
+
+  const topics = [...topicMap.entries()]
+    .map(([name, solvedCount]) => ({
+      name,
+      solved: solvedCount,
+      percentage: totalSolved > 0 ? (solvedCount / totalSolved) * 100 : 0,
+    }))
+    .sort((a, b) => b.solved - a.solved);
+
+  const recentSolvedProblems = await fetchRecentSolvedProblems(username).catch(
+    () => [],
   );
-  const recentSolvedProblems = await fetchRecentSolvedProblems(username);
 
   let contestRating = 0;
   try {
@@ -377,28 +700,28 @@ async function buildAnalysisData(username) {
     contestRating = 0;
   }
 
-  let recentActivity = {
-    last30DaysSubmissions: 0,
-    streak: 0,
-    consistency: "No data",
-    dailyHeatmap: [],
-  };
+  let streak = 0;
+  let last30DaysSubmissions = 0;
   try {
     const calendarData = await postLeetCodeQuery(username, CALENDAR_QUERY);
-    recentActivity = getRecentActivity(calendarData?.matchedUser?.userCalendar);
-  } catch (_error) {
-    recentActivity = {
-      last30DaysSubmissions: 0,
-      streak: 0,
-      consistency: "No data",
-      dailyHeatmap: [],
-    };
-  }
+    const cal = calendarData?.matchedUser?.userCalendar;
+    streak = Number(cal?.streak || 0);
 
-  const timing = buildTimingInsights(
-    recentSolvedProblems,
-    recentActivity.last30DaysSubmissions,
-  );
+    if (cal?.submissionCalendar) {
+      const map = JSON.parse(cal.submissionCalendar);
+      const nowSec = Math.floor(Date.now() / 1000);
+      const start = nowSec - 30 * 24 * 60 * 60;
+      Object.entries(map).forEach(([ts, count]) => {
+        const t = Number(ts);
+        if (t >= start && t <= nowSec) {
+          last30DaysSubmissions += Number(count || 0);
+        }
+      });
+    }
+  } catch (_error) {
+    streak = 0;
+    last30DaysSubmissions = 0;
+  }
 
   return {
     username: matchedUser.username,
@@ -418,8 +741,23 @@ async function buildAnalysisData(username) {
     attemptsPerSolved:
       totalSolved > 0 ? Number((totalSubmissions / totalSolved).toFixed(2)) : 0,
     contestRating,
-    recentActivity,
-    timing,
+    recentActivity: {
+      last30DaysSubmissions,
+      streak,
+      consistency:
+        last30DaysSubmissions >= 20
+          ? "High"
+          : last30DaysSubmissions >= 8
+            ? "Medium"
+            : "Low",
+      dailyHeatmap: [],
+    },
+    timing: {
+      avgAcceptedPerDayLast30: Number((last30DaysSubmissions / 30).toFixed(2)),
+      avgHoursBetweenAccepted: null,
+      lastSolvedAtIso: recentSolvedProblems[0]?.solvedAtIso || null,
+      recentAcceptedCount: recentSolvedProblems.length,
+    },
     recentSolvedProblems,
     difficulty: {
       easy: {
@@ -442,126 +780,6 @@ async function buildAnalysisData(username) {
   };
 }
 
-function buildCoachPrompt(analysis) {
-  const topicSummary = analysis.topics
-    .slice(0, 15)
-    .map((topic) => `${topic.name}: ${topic.percentage.toFixed(1)}%`)
-    .join(", ");
-
-  const recentSubmissionSummary =
-    `Last 30 days submissions: ${analysis.recentActivity.last30DaysSubmissions}, ` +
-    `streak: ${analysis.recentActivity.streak}, ` +
-    `consistency: ${analysis.recentActivity.consistency}`;
-
-  return `You are an expert competitive programming coach and hiring evaluator.
-
-Your task is to analyze a LeetCode user's performance data and generate a detailed, structured evaluation.
-
-INPUT DATA:
-
-* Total solved: ${analysis.totals.solved}
-
-* Easy: ${analysis.difficulty.easy.solved}
-
-* Medium: ${analysis.difficulty.medium.solved}
-
-* Hard: ${analysis.difficulty.hard.solved}
-
-* Acceptance rate: ${analysis.acceptanceRate.toFixed(2)}
-
-* Contest rating: ${analysis.contestRating.toFixed(0)}
-
-* Topic-wise accuracy:
-  ${topicSummary || "No topic data"}
-
-* Recent activity:
-  ${recentSubmissionSummary}
-
----
-
-EVALUATION LOGIC:
-
-1. Evaluate topic strength:
-
-* Strong: >70%
-* Average: 40-70%
-* Weak: <40%
-
-2. Evaluate difficulty handling:
-
-* Strong in Hard if hard problems > 50 solved
-* Weak in Hard if < 20 solved
-
-3. Contest evaluation:
-
-* <1400 -> Beginner
-* 1400-1800 -> Intermediate
-* 1800-2200 -> Strong
-* > 2200 -> Elite
-
----
-
-OUTPUT FORMAT (STRICT):
-
-1. Current Insights:
-* Topic coverage summary in one line (percent and key strengths/weaknesses)
-* Difficulty distribution summary in one line
-* If medium or hard solved count is low, explicitly say: "Try solving more medium and hard questions"
-
-2. Overall Skill Score (0-100):
-* Give only final score and a short rationale using topics/difficulty/contest
-* Do not show long formulas or arithmetic steps
-
-3. Company Readiness (%):
-* Use score out of 100 format, not percent symbol.
-* Format exactly like this with each reason on the next line:
-  FAANG: <score>/100
-  Reason: <one-line reason>
-  Product-based: <score>/100
-  Reason: <one-line reason>
-  Service-based: <score>/100
-  Reason: <one-line reason>
-
-4. Topic Breakdown:
-* Use heading then next-line details format exactly:
-  Strong:
-  <comma-separated topics>
-  Average:
-  <comma-separated topics>
-  Weak:
-  <comma-separated topics>
-* Must mention DP, Graph, Trees explicitly when weak.
-
-5. Key Weaknesses:
-* Missing topics
-* Hard problem gap
-* Consistency gap
-
-6. Improvement Plan (7 days):
-* Day 1 to Day 7, each day with topic + target difficulty + target count
-* Keep plan practical and specific
-
-7. Final Verdict:
-* One line verdict with reason
-
-8. Estimated Time to Reach FAANG Level:
-* realistic range with reason
-
----
-
-IMPORTANT RULES:
-
-* Be honest and realistic (no fake motivation)
-* Do NOT give generic advice
-* Use the input data strictly
-* Keep output structured and clean
-* Prioritize actionable insights
-* Use exactly numbered headings 1 to 8
-* For every subsection, first line must be a heading label and second line must be details.
-
-Return ONLY the structured evaluation.`;
-}
-
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
@@ -571,25 +789,188 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/stats", (_req, res) => {
-  res.json({
-    solved: 0,
-    easy: 0,
-    medium: 0,
-    hard: 0,
-    streak: 0,
-  });
+  res.json({ solved: 0, easy: 0, medium: 0, hard: 0, streak: 0 });
 });
 
-app.get("/api/analyze", async (req, res) => {
-  const username = (req.query.username || "").toString().trim();
+app.post("/api/auth/sync", verifyFirebaseToken, async (req, res) => {
+  try {
+    const userDoc = await ensureUserDocument(req.authUser, req);
+    const user = toPublicUserProfile(req.authUser.uid, userDoc, req.authUser);
+    return res.json({ credits: Number(userDoc.credits || 0), user });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to sync authenticated user.",
+      details: error.message,
+    });
+  }
+});
 
+app.get("/api/profile", verifyFirebaseToken, async (req, res) => {
+  try {
+    const userDoc = await ensureUserDocument(req.authUser, req);
+    const user = toPublicUserProfile(req.authUser.uid, userDoc, req.authUser);
+    return res.json({ credits: Number(userDoc.credits || 0), user });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ error: "Unable to load profile.", details: error.message });
+  }
+});
+
+app.put("/api/profile", verifyFirebaseToken, async (req, res) => {
+  try {
+    const ref = getUserRef(req.authUser.uid);
+    await ensureUserDocument(req.authUser, req);
+
+    const updates = sanitizeProfilePayload(req.body);
+    updates.ipAddress = getClientIp(req);
+    updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    await ref.set(updates, { merge: true });
+
+    const latestSnap = await ref.get();
+    const latestData = latestSnap.data() || {};
+    const user = toPublicUserProfile(
+      req.authUser.uid,
+      latestData,
+      req.authUser,
+    );
+    return res.json({ credits: Number(latestData.credits || 0), user });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ error: "Unable to save profile.", details: error.message });
+  }
+});
+
+app.post("/api/credits/purchase", verifyFirebaseToken, async (req, res) => {
+  const packageKey = (req.body?.packageKey || "").toString().trim();
+
+  try {
+    await ensureUserDocument(req.authUser, req);
+    const result = await addCreditsForPackage(req.authUser.uid, packageKey);
+
+    const latestSnap = await getUserRef(req.authUser.uid).get();
+    const latestData = latestSnap.data() || {};
+    const user = toPublicUserProfile(
+      req.authUser.uid,
+      latestData,
+      req.authUser,
+    );
+
+    return res.json({
+      credits: result.credits,
+      addedCredits: result.package.credits,
+      amountRs: result.package.priceRs,
+      user,
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    return res.status(status).json({
+      error:
+        status === 400
+          ? "Invalid credits package selected."
+          : "Unable to purchase credits.",
+      details: error.message,
+    });
+  }
+});
+
+app.post("/api/credits/claim-free", verifyFirebaseToken, async (req, res) => {
+  try {
+    const uid = req.authUser.uid;
+    const ref = getUserRef(uid);
+
+    await ensureUserDocument(req.authUser, req);
+
+    const result = await firestoreDb.runTransaction(async (txn) => {
+      const snap = await txn.get(ref);
+      const data = snap.data() || {};
+      const currentCredits = Number(data.credits || 0);
+
+      const lastClaimed = data.lastClaimedFreeCredits;
+      const now = new Date();
+
+      if (lastClaimed) {
+        const lastClaimedDate = typeof lastClaimed.toDate === "function"
+          ? lastClaimed.toDate()
+          : new Date(lastClaimed);
+        
+        const diffMs = now.getTime() - lastClaimedDate.getTime();
+        const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+        
+        if (diffMs < oneWeekMs) {
+          const timeLeftMs = oneWeekMs - diffMs;
+          const timeLeftSec = Math.ceil(timeLeftMs / 1000);
+          const error = new Error("You can only claim free credits once every 7 days.");
+          error.status = 400;
+          error.timeLeftSec = timeLeftSec;
+          throw error;
+        }
+      }
+
+      const nextCredits = currentCredits + 3;
+      const claimTimestamp = admin.firestore.FieldValue.serverTimestamp();
+
+      txn.set(
+        ref,
+        {
+          credits: nextCredits,
+          lastClaimedFreeCredits: claimTimestamp,
+          updatedAt: claimTimestamp,
+        },
+        { merge: true }
+      );
+
+      return {
+        credits: nextCredits,
+      };
+    });
+
+    const latestSnap = await ref.get();
+    const latestData = latestSnap.data() || {};
+    const user = toPublicUserProfile(
+      req.authUser.uid,
+      latestData,
+      req.authUser
+    );
+
+    return res.json({
+      credits: result.credits,
+      user,
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    return res.status(status).json({
+      error: error.message || "Unable to claim free credits.",
+      timeLeftSec: error.timeLeftSec || null,
+    });
+  }
+});
+
+app.get("/api/analyze", optionalVerifyFirebaseToken, async (req, res) => {
+  const username = (req.query.username || "").toString().trim();
   if (!username) {
     return res.status(400).json({ error: "Username is required." });
   }
 
   try {
-    const analysis = await buildAnalysisData(username);
-    return res.json(analysis);
+    if (req.authUser) {
+      const userDoc = await ensureUserDocument(req.authUser, req);
+      const analysis = await buildAnalysisData(username);
+      const remainingCredits = Number(userDoc.credits || 0);
+
+      try {
+        await logSearchInFirestore({ username: analysis.username, req });
+      } catch (logError) {
+        console.error("Failed to log search in Firestore:", logError.message);
+      }
+
+      return res.json({ ...analysis, remainingCredits });
+    } else {
+      // Unauthenticated / Anonymous search
+      const analysis = await buildAnalysisData(username);
+      return res.json({ ...analysis, remainingCredits: null });
+    }
   } catch (error) {
     const status = error.status || 500;
     return res.status(status).json({
@@ -602,20 +983,18 @@ app.get("/api/analyze", async (req, res) => {
   }
 });
 
-app.post("/api/coach", async (req, res) => {
+app.post("/api/coach", optionalVerifyFirebaseToken, async (req, res) => {
   const username = (req.body?.username || "").toString().trim();
-
   if (!username) {
     return res.status(400).json({ error: "Username is required." });
   }
 
-  if (!process.env.GROQ_API_KEY) {
-    return res.status(400).json({
-      error: "Missing GROQ_API_KEY in backend environment.",
-    });
-  }
-
   try {
+    if (req.authUser) {
+      await ensureUserDocument(req.authUser, req);
+      await requireAvailableCredit(req.authUser.uid);
+    }
+
     const analysis = await buildAnalysisData(username);
     const prompt = buildCoachPrompt(analysis);
 
@@ -644,22 +1023,28 @@ app.post("/api/coach", async (req, res) => {
 
     const payload = await response.json();
     if (!response.ok) {
-      return res.status(502).json({
-        error: payload.error?.message || "Groq API request failed.",
-      });
+      return res
+        .status(502)
+        .json({ error: payload.error?.message || "Groq API request failed." });
     }
 
     const report = payload.choices?.[0]?.message?.content;
     if (!report) {
-      return res.status(502).json({
-        error: "Groq returned an empty response.",
-      });
+      return res
+        .status(502)
+        .json({ error: "Groq returned an empty response." });
+    }
+
+    let remainingCredits = null;
+    if (req.authUser) {
+      remainingCredits = await consumeOneCredit(req.authUser.uid);
     }
 
     return res.json({
       username: analysis.username,
       model: GROQ_MODEL,
       report,
+      remainingCredits,
       snapshot: analysis,
     });
   } catch (error) {
@@ -668,11 +1053,19 @@ app.post("/api/coach", async (req, res) => {
       error:
         status === 404
           ? "LeetCode username not found."
-          : "Unexpected error while generating coach report.",
+          : status === 402
+            ? "You have no credits remaining."
+            : "Unexpected error while generating coach report.",
       details: error.message,
     });
   }
 });
+
+const frontendDir = fs.existsSync(path.join(FRONTEND_DIST_DIR, "index.html"))
+  ? FRONTEND_DIST_DIR
+  : fs.existsSync(path.join(FRONTEND_BUILD_DIR, "index.html"))
+    ? FRONTEND_BUILD_DIR
+    : LEGACY_PUBLIC_DIR;
 
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "API route not found." });
@@ -698,6 +1091,7 @@ app.use((_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`App running on http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Frontend directory: ${frontendDir}`);
 });
+// Trigger nodemon restart 5
