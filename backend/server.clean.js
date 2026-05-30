@@ -288,6 +288,11 @@ function toPublicUserProfile(uid, data, authUser) {
     bio: data.bio || "",
     ipAddress: data.ipAddress || "",
     credits: Number(data.credits || 0),
+    lastClaimedFreeCredits: data.lastClaimedFreeCredits
+      ? (typeof data.lastClaimedFreeCredits.toDate === "function"
+        ? data.lastClaimedFreeCredits.toDate().toISOString()
+        : data.lastClaimedFreeCredits)
+      : null,
   };
 }
 
@@ -866,6 +871,78 @@ app.post("/api/credits/purchase", verifyFirebaseToken, async (req, res) => {
           ? "Invalid credits package selected."
           : "Unable to purchase credits.",
       details: error.message,
+    });
+  }
+});
+
+app.post("/api/credits/claim-free", verifyFirebaseToken, async (req, res) => {
+  try {
+    const uid = req.authUser.uid;
+    const ref = getUserRef(uid);
+
+    await ensureUserDocument(req.authUser, req);
+
+    const result = await firestoreDb.runTransaction(async (txn) => {
+      const snap = await txn.get(ref);
+      const data = snap.data() || {};
+      const currentCredits = Number(data.credits || 0);
+
+      const lastClaimed = data.lastClaimedFreeCredits;
+      const now = new Date();
+
+      if (lastClaimed) {
+        const lastClaimedDate = typeof lastClaimed.toDate === "function"
+          ? lastClaimed.toDate()
+          : new Date(lastClaimed);
+        
+        const diffMs = now.getTime() - lastClaimedDate.getTime();
+        const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+        
+        if (diffMs < oneWeekMs) {
+          const timeLeftMs = oneWeekMs - diffMs;
+          const timeLeftSec = Math.ceil(timeLeftMs / 1000);
+          const error = new Error("You can only claim free credits once every 7 days.");
+          error.status = 400;
+          error.timeLeftSec = timeLeftSec;
+          throw error;
+        }
+      }
+
+      const nextCredits = currentCredits + 3;
+      const claimTimestamp = admin.firestore.FieldValue.serverTimestamp();
+
+      txn.set(
+        ref,
+        {
+          credits: nextCredits,
+          lastClaimedFreeCredits: claimTimestamp,
+          updatedAt: claimTimestamp,
+        },
+        { merge: true }
+      );
+
+      return {
+        credits: nextCredits,
+      };
+    });
+
+    const latestSnap = await ref.get();
+    const latestData = latestSnap.data() || {};
+    const user = toPublicUserProfile(
+      req.authUser.uid,
+      latestData,
+      req.authUser
+    );
+
+    return res.json({
+      credits: result.credits,
+      user,
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    return res.status(status).json({
+      error: error.message || "Unable to claim free credits.",
+      timeLeftSec: error.timeLeftSec || null,
     });
   }
 });

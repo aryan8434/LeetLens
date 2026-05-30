@@ -131,6 +131,11 @@ export function AuthProvider({ children }) {
               age: data?.age || 0,
               location: data?.location || "",
               bio: data?.bio || "",
+              lastClaimedFreeCredits: data?.lastClaimedFreeCredits
+                ? (typeof data.lastClaimedFreeCredits.toDate === "function"
+                  ? data.lastClaimedFreeCredits.toDate().toISOString()
+                  : data.lastClaimedFreeCredits)
+                : null,
             });
           } else {
             setUserProfile({
@@ -141,6 +146,7 @@ export function AuthProvider({ children }) {
               age: 0,
               location: "",
               bio: "",
+              lastClaimedFreeCredits: null,
             });
           }
           setCreditsReady(true);

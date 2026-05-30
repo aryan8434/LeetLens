@@ -4,6 +4,7 @@ import { useAuth } from "./contexts/AuthContext";
 import AuthModal from "./components/AuthModal";
 import AccountMenu from "./components/AccountMenu";
 import ProfilePage from "./components/ProfilePage";
+import CreditsPage from "./components/CreditsPage";
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
@@ -317,6 +318,7 @@ function App() {
   const [showReportPage, setShowReportPage] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [view, setView] = useState("home"); // "home" or "profile"
+  const [showZeroCreditsModal, setShowZeroCreditsModal] = useState(false);
 
   useEffect(() => {
     if (!currentUser) {
@@ -436,7 +438,7 @@ function App() {
       }
 
       if (Number(credits) <= 0) {
-        setCoachError("You have no credits remaining.");
+        setShowZeroCreditsModal(true);
         return;
       }
     } else {
@@ -557,11 +559,17 @@ function App() {
             <span className="lens">Lens</span>
           </h1>
         </div>
-        <AccountMenu onLogin={() => setShowAuthModal(true)} onProfileClick={() => setView("profile")} />
+        <AccountMenu
+          onLogin={() => setShowAuthModal(true)}
+          onProfileClick={() => setView("profile")}
+          onCreditsClick={() => setView("credits")}
+        />
       </header>
 
       {view === "profile" ? (
         <ProfilePage onBack={() => setView("home")} />
+      ) : view === "credits" ? (
+        <CreditsPage onBack={() => setView("home")} />
       ) : (
         <>
           <p className="subtitle">
@@ -986,6 +994,48 @@ function App() {
 
       {showAuthModal ? (
         <AuthModal onClose={() => setShowAuthModal(false)} />
+      ) : null}
+
+      {showZeroCreditsModal ? (
+        <div className="premium-modal-backdrop" onClick={() => setShowZeroCreditsModal(false)}>
+          <div className="premium-modal-card zero-credits-modal" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="premium-modal-close"
+              onClick={() => setShowZeroCreditsModal(false)}
+            >
+              &times;
+            </button>
+            <div className="premium-modal-icon-wrap">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+            </div>
+            <h2>0 Credits Left</h2>
+            <p>You have run out of evaluation credits. Please buy credits or claim your free weekly credits to generate a new AI report.</p>
+            <div className="premium-modal-actions">
+              <button
+                type="button"
+                className="premium-btn-primary"
+                onClick={() => {
+                  setView("credits");
+                  setShowZeroCreditsModal(false);
+                }}
+              >
+                Buy / Claim Credits
+              </button>
+              <button
+                type="button"
+                className="premium-btn-secondary"
+                onClick={() => setShowZeroCreditsModal(false)}
+              >
+                Maybe Later
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </main>
   );
