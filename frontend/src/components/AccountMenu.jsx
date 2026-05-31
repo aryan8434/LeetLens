@@ -1,7 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 
-export default function AccountMenu({ onLogin, onProfileClick, onCreditsClick, onHistoryClick }) {
+export default function AccountMenu({
+  onLogin,
+  onProfileClick,
+  onCreditsClick,
+  onHistoryClick,
+}) {
   const { currentUser, userProfile, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
@@ -24,7 +29,21 @@ export default function AccountMenu({ onLogin, onProfileClick, onCreditsClick, o
   if (!currentUser) {
     return (
       <button type="button" className="account-login-btn" onClick={onLogin}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", verticalAlign: "middle", marginRight: "0.4rem" }}>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            display: "inline-block",
+            verticalAlign: "middle",
+            marginRight: "0.4rem",
+          }}
+        >
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
           <circle cx="12" cy="7" r="4" />
         </svg>
@@ -34,7 +53,9 @@ export default function AccountMenu({ onLogin, onProfileClick, onCreditsClick, o
   }
 
   const greetingName = userProfile?.name || currentUser.displayName || "";
-  const initialChar = (greetingName || currentUser.email || "U").charAt(0).toUpperCase();
+  const initialChar = (greetingName || currentUser.email || "U")
+    .charAt(0)
+    .toUpperCase();
 
   return (
     <div className="account-menu-wrap" ref={menuRef}>
@@ -45,15 +66,27 @@ export default function AccountMenu({ onLogin, onProfileClick, onCreditsClick, o
         aria-expanded={open}
       >
         {currentUser.photoURL ? (
-          <img src={currentUser.photoURL} alt="profile" className="avatar-img-premium" />
+          <img
+            src={currentUser.photoURL}
+            alt="profile"
+            className="avatar-img-premium"
+          />
         ) : (
           <div className="avatar-initial-premium">{initialChar}</div>
         )}
         <span className="greeting-text-premium">
           {greetingName ? `Hello, ${greetingName}` : "Hello"}
         </span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className={`arrow-icon-premium ${open ? "open" : ""}`}>
-          <path d="m6 9 6 6 6-6"/>
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          className={`arrow-icon-premium ${open ? "open" : ""}`}
+        >
+          <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
 
@@ -71,7 +104,16 @@ export default function AccountMenu({ onLogin, onProfileClick, onCreditsClick, o
                 setOpen(false);
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                 <circle cx="12" cy="7" r="4" />
               </svg>
@@ -86,10 +128,19 @@ export default function AccountMenu({ onLogin, onProfileClick, onCreditsClick, o
                 setOpen(false);
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="8"/>
-                <line x1="12" y1="8" x2="12" y2="16"/>
-                <line x1="8" y1="12" x2="16" y2="12"/>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="8" />
+                <line x1="12" y1="8" x2="12" y2="16" />
+                <line x1="8" y1="12" x2="16" y2="12" />
               </svg>
               <span>Credits</span>
             </button>
@@ -102,7 +153,16 @@ export default function AccountMenu({ onLogin, onProfileClick, onCreditsClick, o
                 setOpen(false);
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M3 12h3l3 8 4-16 3 8h3" />
               </svg>
               <span>History</span>
@@ -118,7 +178,16 @@ export default function AccountMenu({ onLogin, onProfileClick, onCreditsClick, o
                 setOpen(false);
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                 <polyline points="16 17 21 12 16 7" />
                 <line x1="21" y1="12" x2="9" y2="12" />

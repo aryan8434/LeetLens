@@ -782,6 +782,7 @@ function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [view, setView] = useState("home"); // "home" or "profile" or "history"
   const [showZeroCreditsModal, setShowZeroCreditsModal] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Unlocks & History states
   const [currentReportId, setCurrentReportId] = useState(null);
@@ -838,6 +839,7 @@ function App() {
       return;
     }
     try {
+      setHistoryLoading(true);
       const token = await currentUser.getIdToken();
       const response = await fetch(`${API_BASE_URL}/api/reports/history`, {
         headers: {
@@ -871,6 +873,8 @@ function App() {
       }
     } catch (err) {
       console.error("Failed to fetch report history:", err);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -885,6 +889,12 @@ function App() {
       window.removeEventListener("focus", handleFocus);
     };
   }, [currentUser, currentReportId]);
+
+  useEffect(() => {
+    if (view === "history" && currentUser) {
+      fetchReportHistory();
+    }
+  }, [view, currentUser]);
 
   // Restore active report on refresh/load
   useEffect(() => {
@@ -1373,14 +1383,13 @@ function App() {
       </header>
 
       {view === "profile" ? (
-        <ProfilePage
-          onBack={() => setView("home")}
-        />
+        <ProfilePage onBack={() => setView("home")} />
       ) : view === "history" ? (
         <EvaluationHistory
           onBack={() => setView("profile")}
           historyReports={historyReports}
           recentSearches={recentSearches}
+          isLoading={historyLoading}
           onOpenReport={loadHistoryReport}
           onReuseSearch={(value) => {
             setUsername(value);
@@ -1389,12 +1398,6 @@ function App() {
         />
       ) : view === "credits" ? (
         <CreditsPage onBack={() => setView("home")} />
-      ) : view === "evaluations" ? (
-        <EvaluationHistory
-          onBack={() => setView("profile")}
-          historyReports={historyReports}
-          onOpenReport={loadHistoryReport}
-        />
       ) : (
         <>
           <p className="subtitle">
@@ -1886,160 +1889,155 @@ function App() {
                             </>
                           );
                         })()}
-
                       </article>
                     ) : null}
 
-                        {remainingSections.map((section, sIndex) => (
-                          <article
-                            key={`section-${sIndex}`}
-                            className="report-section reveal-on-scroll"
-                          >
-                            <h3 className="section-title">{section.title}</h3>
-                            <ul>
-                              {section.items.map((item, index) => (
-                                <li
-                                  key={`${section.title}-${index}`}
-                                  style={{ "--item-index": index }}
-                                >
-                                  {renderLineWithHighlights(item)}
-                                </li>
-                              ))}
-                            </ul>
+                    {remainingSections.map((section, sIndex) => (
+                      <article
+                        key={`section-${sIndex}`}
+                        className="report-section reveal-on-scroll"
+                      >
+                        <h3 className="section-title">{section.title}</h3>
+                        <ul>
+                          {section.items.map((item, index) => (
+                            <li
+                              key={`${section.title}-${index}`}
+                              style={{ "--item-index": index }}
+                            >
+                              {renderLineWithHighlights(item)}
+                            </li>
+                          ))}
+                        </ul>
 
-                            {normalizeSectionTitle(section.title).includes(
-                              "weakness",
-                            ) &&
-                              currentUser &&
-                              currentReportId && (
-                                <div className="detail-unlock-container">
-                                  {unlockedDetails?.weaknessAnalysis ? (
-                                    <div className="unlocked-action-container">
-                                      <button
-                                        type="button"
-                                        className="unlock-action-btn view-tab-btn"
-                                        onClick={() =>
-                                          handleUnlockRedirect("weaknesses")
-                                        }
-                                      >
-                                        Open Weakness Analysis (New Tab)
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className="unlock-action-btn"
-                                      onClick={() =>
-                                        handleUnlockRedirect("weaknesses")
-                                      }
-                                    >
-                                      Deep Weakness Analysis (-1 credit)
-                                    </button>
-                                  )}
+                        {normalizeSectionTitle(section.title).includes(
+                          "weakness",
+                        ) &&
+                          currentUser &&
+                          currentReportId && (
+                            <div className="detail-unlock-container">
+                              {unlockedDetails?.weaknessAnalysis ? (
+                                <div className="unlocked-action-container">
+                                  <button
+                                    type="button"
+                                    className="unlock-action-btn view-tab-btn"
+                                    onClick={() =>
+                                      handleUnlockRedirect("weaknesses")
+                                    }
+                                  >
+                                    Open Weakness Analysis (New Tab)
+                                  </button>
                                 </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="unlock-action-btn"
+                                  onClick={() =>
+                                    handleUnlockRedirect("weaknesses")
+                                  }
+                                >
+                                  Deep Weakness Analysis (-1 credit)
+                                </button>
                               )}
+                            </div>
+                          )}
 
-                            {normalizeSectionTitle(section.title).includes(
-                              "plan",
-                            ) &&
-                              currentUser &&
-                              currentReportId && (
-                                <div className="roadmap-6month-container">
-                                  <h4>Detailed 6-Month Preparation Roadmap</h4>
-                                  <hr className="detail-divider" />
-                                  <p className="roadmap-explanation-note">
-                                    Plan your next 6 months day-by-day.
-                                    Unlocking each month consumes 1 credit.
-                                  </p>
-                                  <div className="roadmap-month-tabs">
-                                    {[1, 2, 3, 4, 5, 6].map((m) => {
-                                      const monthKey = `month${m}`;
-                                      const isUnlocked =
-                                        !!unlockedDetails?.sixMonthPlan?.[
-                                          monthKey
-                                        ];
-                                      const isActive = activeMonthTab === m;
-                                      return (
+                        {normalizeSectionTitle(section.title).includes(
+                          "plan",
+                        ) &&
+                          currentUser &&
+                          currentReportId && (
+                            <div className="roadmap-6month-container">
+                              <h4>Detailed 6-Month Preparation Roadmap</h4>
+                              <hr className="detail-divider" />
+                              <p className="roadmap-explanation-note">
+                                Plan your next 6 months day-by-day. Unlocking
+                                each month consumes 1 credit.
+                              </p>
+                              <div className="roadmap-month-tabs">
+                                {[1, 2, 3, 4, 5, 6].map((m) => {
+                                  const monthKey = `month${m}`;
+                                  const isUnlocked =
+                                    !!unlockedDetails?.sixMonthPlan?.[monthKey];
+                                  const isActive = activeMonthTab === m;
+                                  return (
+                                    <button
+                                      key={`tab-month-${m}`}
+                                      type="button"
+                                      className={`month-tab-btn ${isUnlocked ? "unlocked" : "locked"} ${isActive ? "active" : ""}`}
+                                      onClick={() => {
+                                        setActiveMonthTab(m);
+                                      }}
+                                    >
+                                      Month {m} {isUnlocked ? "✓" : "🔒"}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {(() => {
+                                const monthKey = `month${activeMonthTab}`;
+                                const isUnlocked =
+                                  !!unlockedDetails?.sixMonthPlan?.[monthKey];
+                                return (
+                                  <div
+                                    className="month-curriculum-panel"
+                                    style={{
+                                      marginTop: "1rem",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    {isUnlocked ? (
+                                      <div className="unlocked-action-container">
                                         <button
-                                          key={`tab-month-${m}`}
                                           type="button"
-                                          className={`month-tab-btn ${isUnlocked ? "unlocked" : "locked"} ${isActive ? "active" : ""}`}
-                                          onClick={() => {
-                                            setActiveMonthTab(m);
-                                          }}
+                                          className="unlock-action-btn view-tab-btn"
+                                          onClick={() =>
+                                            handleUnlockRedirect(
+                                              "roadmap",
+                                              activeMonthTab,
+                                            )
+                                          }
                                         >
-                                          Month {m} {isUnlocked ? "✓" : "🔒"}
+                                          Open Month {activeMonthTab} Curriculum
+                                          (New Tab)
                                         </button>
-                                      );
-                                    })}
-                                  </div>
-                                  {(() => {
-                                    const monthKey = `month${activeMonthTab}`;
-                                    const isUnlocked =
-                                      !!unlockedDetails?.sixMonthPlan?.[
-                                        monthKey
-                                      ];
-                                    return (
+                                      </div>
+                                    ) : (
                                       <div
-                                        className="month-curriculum-panel"
+                                        className="locked-month-indicator"
                                         style={{
-                                          marginTop: "1rem",
-                                          textAlign: "center",
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "1rem",
+                                          alignItems: "center",
                                         }}
                                       >
-                                        {isUnlocked ? (
-                                          <div className="unlocked-action-container">
-                                            <button
-                                              type="button"
-                                              className="unlock-action-btn view-tab-btn"
-                                              onClick={() =>
-                                                handleUnlockRedirect(
-                                                  "roadmap",
-                                                  activeMonthTab,
-                                                )
-                                              }
-                                            >
-                                              Open Month {activeMonthTab}{" "}
-                                              Curriculum (New Tab)
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <div
-                                            className="locked-month-indicator"
-                                            style={{
-                                              display: "flex",
-                                              flexDirection: "column",
-                                              gap: "1rem",
-                                              alignItems: "center",
-                                            }}
-                                          >
-                                            <p style={{ margin: 0 }}>
-                                              Month {activeMonthTab} preparation
-                                              curriculum is locked.
-                                            </p>
-                                            <button
-                                              type="button"
-                                              className="unlock-action-btn"
-                                              onClick={() =>
-                                                handleUnlockRedirect(
-                                                  "roadmap",
-                                                  activeMonthTab,
-                                                )
-                                              }
-                                              style={{ maxWidth: "320px" }}
-                                            >
-                                              Unlock Month {activeMonthTab} (-1
-                                              credit)
-                                            </button>
-                                          </div>
-                                        )}
+                                        <p style={{ margin: 0 }}>
+                                          Month {activeMonthTab} preparation
+                                          curriculum is locked.
+                                        </p>
+                                        <button
+                                          type="button"
+                                          className="unlock-action-btn"
+                                          onClick={() =>
+                                            handleUnlockRedirect(
+                                              "roadmap",
+                                              activeMonthTab,
+                                            )
+                                          }
+                                          style={{ maxWidth: "320px" }}
+                                        >
+                                          Unlock Month {activeMonthTab} (-1
+                                          credit)
+                                        </button>
                                       </div>
-                                    );
-                                  })()}
-                                </div>
-                              )}
-                          </article>
-                        ))}
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+                      </article>
+                    ))}
                   </div>
                 </>
               ) : null}

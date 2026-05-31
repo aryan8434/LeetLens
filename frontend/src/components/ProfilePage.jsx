@@ -1,9 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 
-export default function ProfilePage({
-  onBack,
-}) {
+export default function ProfilePage({ onBack }) {
   const {
     userProfile,
     updateProfileData,
@@ -343,7 +341,6 @@ export default function ProfilePage({
               </div>
             )}
           </div>
-
         </div>
       </div>
     </div>
