@@ -1020,6 +1020,7 @@ function App() {
   const [coachSavedAt, setCoachSavedAt] = useState("");
   const [showAllTopics, setShowAllTopics] = useState(false);
   const [showReportPage, setShowReportPage] = useState(false);
+  const [showReportSidebar, setShowReportSidebar] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [view, setView] = useState("home"); // "home" or "profile" or "history"
   const [showZeroCreditsModal, setShowZeroCreditsModal] = useState(false);
@@ -1332,6 +1333,7 @@ function App() {
 
   const handleCloseReport = () => {
     setShowReportPage(false);
+    setShowReportSidebar(false);
     localStorage.removeItem("leetlens_active_report_id");
   };
 
@@ -1366,7 +1368,7 @@ function App() {
     return () => {
       observer.disconnect();
     };
-  }, [analysis, showReportPage, coachReport]);
+  }, [analysis, showReportPage, coachReport, view]);
 
   const handleAnalyze = async (event) => {
     event.preventDefault();
@@ -1627,7 +1629,7 @@ function App() {
         <ProfilePage onBack={() => setView("home")} />
       ) : view === "history" ? (
         <EvaluationHistory
-          onBack={() => setView("profile")}
+          onBack={() => setView("home")}
           historyReports={historyReports}
           recentSearches={recentSearches}
           isLoading={historyLoading}
@@ -1844,75 +1846,54 @@ function App() {
                   and a 7-day plan.
                 </p>
 
-                {coachSavedAt ? (
-                  <p className="saved-note">
-                    Saved report available for this username.
-                  </p>
-                ) : null}
-
                 <div className="coach-actions">
                   <button
                     type="button"
                     className="coach-button"
-                    onClick={() => handleCoachReport(false)}
+                    onClick={() => handleCoachReport(true)}
                     disabled={coachLoading}
                   >
                     {coachLoading
                       ? "Generating Report..."
-                      : coachReport
-                        ? "Open Saved AI Evaluation"
-                        : "Generate AI Evaluation"}
+                      : "Generate AI Evaluation"}
                   </button>
-
-                  {coachReport ? (
-                    <button
-                      type="button"
-                      className="coach-button coach-button-secondary"
-                      onClick={() => handleCoachReport(true)}
-                      disabled={coachLoading}
-                    >
-                      {coachLoading
-                        ? "Generating..."
-                        : "Generate New AI Report"}
-                    </button>
-                  ) : null}
                 </div>
               </section>
             </>
           ) : null}
 
-          {currentUser && historyReports.length > 0 && (
-            <section className="card history-card reveal-on-scroll">
-              <h2>Evaluation History</h2>
-              <p className="topics-note">
-                Reopen any of your past evaluations without spending credits.
-              </p>
-              <div className="history-list">
-                {historyReports.map((rep) => (
-                  <article key={rep.id} className="history-item">
-                    <div className="history-item-info">
-                      <h4>{rep.username}</h4>
-                      <small>{new Date(rep.timestamp).toLocaleString()}</small>
-                    </div>
-                    <button
-                      type="button"
-                      className="history-open-btn"
-                      onClick={() => loadHistoryReport(rep)}
-                    >
-                      Open Report
-                    </button>
-                  </article>
-                ))}
-              </div>
-            </section>
-          )}
         </>
       )}
 
       {showReportPage ? (
         <section className="report-page">
           <div className="report-header">
-            <h2>AI Evaluation Report</h2>
+            <div className="report-header-left" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+              {currentUser && historyReports.length > 0 && (
+                <button
+                  type="button"
+                  className="hamburger-btn"
+                  onClick={() => setShowReportSidebar(!showReportSidebar)}
+                  title={showReportSidebar ? "Hide Saved Reports" : "Show Saved Reports"}
+                >
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                  </svg>
+                </button>
+              )}
+              <h2>AI Evaluation Report</h2>
+            </div>
             <button
               type="button"
               className="close-report"
@@ -1924,38 +1905,54 @@ function App() {
 
           <div className="report-split-container">
             {currentUser && historyReports.length > 0 && (
-              <aside className="report-sidebar">
-                <h3>Saved Reports</h3>
-                <div className="sidebar-tiles">
-                  {historyReports.map((rep) => {
-                    const isActive = rep.id === currentReportId;
-                    const dateStr = rep.timestamp
-                      ? new Date(rep.timestamp).toLocaleString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "Date Unknown";
-                    return (
-                      <article
-                        key={rep.id}
-                        className={`history-tile ${isActive ? "active" : ""}`}
-                        onClick={() => loadHistoryReport(rep)}
-                      >
-                        <div className="tile-header">
-                          <span className="tile-username">@{rep.username}</span>
-                          {isActive && (
-                            <span className="active-indicator">Active</span>
-                          )}
-                        </div>
-                        <small className="tile-date">{dateStr}</small>
-                      </article>
-                    );
-                  })}
-                </div>
-              </aside>
+              <>
+                <div
+                  className={`sidebar-backdrop ${showReportSidebar ? "show" : ""}`}
+                  onClick={() => setShowReportSidebar(false)}
+                />
+                <aside className={`report-sidebar ${showReportSidebar ? "open" : ""}`}>
+                  <div className="sidebar-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "0.6rem", marginBottom: "0.4rem" }}>
+                    <h3 style={{ margin: 0, border: "none", padding: 0, opacity: 1, textTransform: "none", fontSize: "1.1rem" }}>Saved Reports</h3>
+                    <button
+                      type="button"
+                      className="sidebar-close-btn"
+                      onClick={() => setShowReportSidebar(false)}
+                      style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "1.4rem", cursor: "pointer", padding: "0 0.2rem" }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="sidebar-tiles">
+                    {historyReports.map((rep) => {
+                      const isActive = rep.id === currentReportId;
+                      const dateStr = rep.timestamp
+                        ? new Date(rep.timestamp).toLocaleString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "Date Unknown";
+                      return (
+                        <article
+                          key={rep.id}
+                          className={`history-tile ${isActive ? "active" : ""}`}
+                          onClick={() => loadHistoryReport(rep)}
+                        >
+                          <div className="tile-header">
+                            <span className="tile-username">@{rep.username}</span>
+                            {isActive && (
+                              <span className="active-indicator">Active</span>
+                            )}
+                          </div>
+                          <small className="tile-date">{dateStr}</small>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </aside>
+              </>
             )}
 
             <main className="report-main-content">
