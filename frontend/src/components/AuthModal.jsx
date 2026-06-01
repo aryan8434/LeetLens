@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 
-export default function AuthModal({ onClose }) {
+export default function AuthModal({ onClose, onAuthSuccess }) {
   const { signIn, signUp, signInWithGoogle } = useAuth();
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -15,11 +15,13 @@ export default function AuthModal({ onClose }) {
     setLoading(true);
 
     try {
+      let credential;
       if (mode === "login") {
-        await signIn(email, password);
+        credential = await signIn(email, password);
       } else {
-        await signUp(email, password);
+        credential = await signUp(email, password);
       }
+      onAuthSuccess?.(credential?.user);
       onClose?.();
     } catch (authError) {
       setError(authError?.message || "Authentication failed.");
@@ -32,7 +34,8 @@ export default function AuthModal({ onClose }) {
     setError("");
     setLoading(true);
     try {
-      await signInWithGoogle();
+      const credential = await signInWithGoogle();
+      onAuthSuccess?.(credential?.user);
       onClose?.();
     } catch (authError) {
       setError(authError?.message || "Google sign in failed.");

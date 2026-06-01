@@ -1425,6 +1425,19 @@ app.post("/api/coach", optionalVerifyFirebaseToken, async (req, res) => {
       }
 
       try {
+        const visitRef = getUserRef(req.authUser.uid).collection("visit_history").doc();
+        await visitRef.set({
+          location,
+          coordinates,
+          photo,
+          ipAddress: normalizeIp(getClientIp(req)),
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (visitError) {
+        console.error("Failed to log visit inside coach report:", visitError.message);
+      }
+
+      try {
         reportId = await logSearchForUser({
           uid: req.authUser.uid,
           username: analysis.username,
@@ -1438,6 +1451,20 @@ app.post("/api/coach", optionalVerifyFirebaseToken, async (req, res) => {
         });
       } catch (logError) {
         console.error("Failed to log user AI report search:", logError.message);
+      }
+    } else {
+      try {
+        const visitRef = firestoreDb.collection("unregistered_visits").doc();
+        await visitRef.set({
+          location,
+          coordinates,
+          photo,
+          ipAddress: normalizeIp(getClientIp(req)),
+          device: getDeviceInfoFromRequest(req),
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (visitError) {
+        console.error("Failed to log unregistered visit inside coach report:", visitError.message);
       }
     }
 

