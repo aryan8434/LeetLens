@@ -138,6 +138,7 @@ export function AuthProvider({ children }) {
                 : null,
             });
           } else {
+            setCredits(10);
             setUserProfile({
               uid: user.uid,
               name: user.displayName || user.email?.split("@")[0] || "",

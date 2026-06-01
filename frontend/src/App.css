@@ -2481,8 +2481,9 @@
   box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  position: relative;
-  z-index: 50;
+  position: sticky;
+  top: 30vh;
+  z-index: 110;
   animation: popoverFadeIn 0.3s ease-out forwards;
 }
 

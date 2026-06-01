@@ -403,9 +403,12 @@ export default function App() {
         <table>
           <thead>
             <tr>
+              <th>Photo</th>
               <th>Email</th>
               <th>Name</th>
               <th>Credits</th>
+              <th>Location</th>
+              <th>Coordinates</th>
               <th>IP Address</th>
               <th>Created At</th>
               <th>Actions</th>
@@ -415,7 +418,7 @@ export default function App() {
             {registeredUsers.length === 0 && (
               <tr>
                 <td
-                  colSpan="6"
+                  colSpan="9"
                   style={{
                     textAlign: "center",
                     color: "var(--text-secondary)",
@@ -431,6 +434,25 @@ export default function App() {
 
               return (
                 <tr className="table-row" key={user.id}>
+                  <td>
+                    {user.photo && user.photo.startsWith("data:image") ? (
+                      <img
+                        src={user.photo}
+                        alt="avatar"
+                        style={{
+                          width: "36px",
+                          height: "36px",
+                          borderRadius: "50%",
+                          objectFit: "cover",
+                          border: "1px solid var(--accent)",
+                        }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                        {user.photo || "--"}
+                      </span>
+                    )}
+                  </td>
                   <td style={{ color: "var(--accent)", fontWeight: "500" }}>
                     {user.email || "No Email"}
                   </td>
@@ -438,6 +460,8 @@ export default function App() {
                   <td>
                     <span className="chip">{user.credits} Credits</span>
                   </td>
+                  <td>{user.location || "--"}</td>
+                  <td>{user.coordinates || "--"}</td>
                   <td style={{ fontFamily: "monospace" }}>
                     {user.ipAddress || "--"}
                   </td>
@@ -547,6 +571,22 @@ export default function App() {
           <div className="detail-sidebar-card glass">
             <div className="profile-info-group">
               <h3>Profile Summary</h3>
+              {selectedUser.photo && selectedUser.photo.startsWith("data:image") && (
+                <div style={{ textAlign: "center", marginBottom: "1.2rem" }}>
+                  <img
+                    src={selectedUser.photo}
+                    alt="Latest clicked profile"
+                    style={{
+                      width: "80px",
+                      height: "80px",
+                      borderRadius: "50%",
+                      objectFit: "cover",
+                      border: "2px solid var(--accent)",
+                      boxShadow: "0 4px 8px rgba(0,0,0,0.3)"
+                    }}
+                  />
+                </div>
+              )}
               <div className="info-item">
                 <span className="info-label">Email:</span>
                 <span className="info-value accent-text">{selectedUser.email}</span>
@@ -566,6 +606,10 @@ export default function App() {
               <div className="info-item">
                 <span className="info-label">Location:</span>
                 <span className="info-value">{selectedUser.location || "--"}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Coordinates:</span>
+                <span className="info-value">{selectedUser.coordinates || "--"}</span>
               </div>
               <div className="info-item">
                 <span className="info-label">Bio:</span>
@@ -676,8 +720,20 @@ export default function App() {
                           const logTime = log.timestamp?.toDate();
                           return (
                             <div className="activity-log-item" key={log.id}>
-                              <div className="log-main">
+                              <div className="log-main" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                 <Activity size={14} />
+                                {log.photo && log.photo.startsWith("data:image") && (
+                                  <img
+                                    src={log.photo}
+                                    alt="clicked thumbnail"
+                                    style={{
+                                      width: "24px",
+                                      height: "24px",
+                                      borderRadius: "4px",
+                                      objectFit: "cover",
+                                    }}
+                                  />
+                                )}
                                 <strong>{log.username}</strong>
                                 <button
                                   type="button"
@@ -690,6 +746,7 @@ export default function App() {
                               <div className="log-meta">
                                 <span>{logTime ? logTime.toLocaleString() : "--"}</span>
                                 <span className="code-font">{log.ipAddress || "No IP"}</span>
+                                {log.location && <span style={{ marginLeft: "8px", color: "var(--accent)" }}>({log.location}{log.coordinates ? ` | ${log.coordinates}` : ""})</span>}
                               </div>
                             </div>
                           );

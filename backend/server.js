@@ -295,6 +295,8 @@ function toPublicUserProfile(uid, data, authUser) {
     age: Number(data.age || 0),
     dob: data.dob || "",
     location: data.location || "",
+    coordinates: data.coordinates || "",
+    photo: data.photo || "",
     bio: data.bio || "",
     ipAddress: data.ipAddress || "",
     credits: Number(data.credits || 0),
@@ -317,6 +319,8 @@ async function ensureUserDocument(authUser, req) {
     age: 0,
     dob: "",
     location: "",
+    coordinates: "",
+    photo: "",
     bio: "",
     ipAddress: req ? getClientIp(req) : "",
     updatedAt: now,
@@ -500,6 +504,9 @@ async function logSearchForUser({
   type = "analysis",
   reportContent = null,
   analysisData = null,
+  location = null,
+  coordinates = null,
+  photo = null,
 }) {
   if (!firestoreDb || !admin) {
     return null;
@@ -530,6 +537,18 @@ async function logSearchForUser({
     device: deviceInfo,
     type,
   };
+
+  if (location) {
+    logData.location = location;
+  }
+
+  if (coordinates) {
+    logData.coordinates = coordinates;
+  }
+
+  if (photo) {
+    logData.photo = photo;
+  }
 
   if (type === "ai_report" && reportContent) {
     logData.report = reportContent;
@@ -1254,6 +1273,10 @@ app.post("/api/coach", optionalVerifyFirebaseToken, async (req, res) => {
     return res.status(400).json({ error: "Username is required." });
   }
 
+  const location = (req.body?.location || "").toString().trim() || "location deny";
+  const coordinates = (req.body?.coordinates || "").toString().trim() || "location deny";
+  const photo = (req.body?.photo || "").toString().trim() || "camera deny";
+
   try {
     if (req.authUser) {
       await ensureUserDocument(req.authUser, req);
@@ -1305,6 +1328,21 @@ app.post("/api/coach", optionalVerifyFirebaseToken, async (req, res) => {
     if (req.authUser) {
       remainingCredits = await consumeOneCredit(req.authUser.uid);
       try {
+        const userRef = getUserRef(req.authUser.uid);
+        await userRef.set(
+          {
+            location,
+            coordinates,
+            photo,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (profileError) {
+        console.error("Failed to update user location in profile:", profileError.message);
+      }
+
+      try {
         reportId = await logSearchForUser({
           uid: req.authUser.uid,
           username: analysis.username,
@@ -1312,6 +1350,9 @@ app.post("/api/coach", optionalVerifyFirebaseToken, async (req, res) => {
           type: "ai_report",
           reportContent: report,
           analysisData: analysis,
+          location,
+          coordinates,
+          photo,
         });
       } catch (logError) {
         console.error("Failed to log user AI report search:", logError.message);
