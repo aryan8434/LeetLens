@@ -23,7 +23,7 @@ const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const REGISTERED_USERS_COLLECTION = "registered_users";
 const FIRESTORE_USER_SEARCH_COLLECTION = "user_searches";
-const DEFAULT_USER_CREDITS = 3;
+const DEFAULT_USER_CREDITS = 10;
 const CREDIT_PACKAGES = {
   "10_rs19": { credits: 10, priceRs: 19 },
   "20_rs29": { credits: 20, priceRs: 29 },
@@ -1569,18 +1569,26 @@ app.post(
 
       const prompt = [
         "You are an expert competitive programming coach and technical interviewer.",
-        "Write a highly detailed, deep topic-by-topic evaluation of the candidate's strengths and weaknesses, and list exactly what advanced algorithms/topics they need to cover.",
+        "Provide a highly detailed, topic-by-topic evaluation of the candidate's DSA topic coverage for ALL 15-20 major DSA topics (such as Array, String, Hash Table, Dynamic Programming, Math, Sorting, Greedy, Binary Search, Tree, DFS, BFS, Graph, Two Pointers, Stack, Queue, Heap, Sliding Window, Trie, Recursion).",
         "",
         "Candidate Stats:",
         `- Total solved: ${analysis.totals.solved}`,
         `- Easy/Medium/Hard: ${analysis.difficulty.easy.solved}/${analysis.difficulty.medium.solved}/${analysis.difficulty.hard.solved}`,
         `- Acceptance rate: ${analysis.acceptanceRate.toFixed(2)}%`,
-        `- Topics solved: ${topicSummary || "No topic data"}- `,
+        `- Topics solved: ${topicSummary || "No topic data"}`,
         "",
-        "Please explain deeply:",
-        "1. Which topics are their absolute strengths (and why, based on stats).",
-        "2. Which topics are their weaknesses (and why, e.g. Dynamic Programming, Graph, Trees, etc.).",
-        "3. Exactly what advanced algorithms, sub-topics, or concepts they need to master for each of these areas (e.g. for DP: knapsack, digit DP, LCS; for Graph: Dijkstra, Prim, Union-Find).",
+        "Evaluation Rule for each topic:",
+        "- If a topic has strong coverage (conceptually estimated as at least 5 easy, 10 medium, and 5 hard questions solved in that topic, which means roughly 20+ total solved in that topic with a balanced difficulty profile), output the verdict as a Strength:",
+        "  Format: [Topic Name] is covered",
+        "  (Verdict: Strength - you need to revise this every week only)",
+        "- If the topic does not meet this threshold, output the verdict as needing more coverage:",
+        "  Format: [Topic Name] needs more coverage",
+        "  (Verdict: Focus - you need to cover this topic more and solve more medium/hard questions)",
+        "",
+        "Instructions:",
+        "1. List all 15-20 standard DSA topics one by one.",
+        "2. Apply the evaluation rule above to each topic based on the candidate's stats.",
+        "3. Provide 1-2 bullet points of specific advice, recommended algorithms, or practice targets for each topic.",
         "Format the output as clean markdown without any surrounding conversation.",
       ].join("\n");
 

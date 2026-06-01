@@ -461,6 +461,15 @@ function CreditsPage({ onBack }) {
                 </button>
               </div>
             </div>
+
+            <div className="credits-claim-card" style={{ border: "1px dashed #475569", background: "rgba(15, 23, 42, 0.4)", marginTop: "1.2rem" }}>
+              <div className="credits-claim-info">
+                <h3>Need more credits?</h3>
+                <p style={{ margin: "0.25rem 0 0", color: "#cbd5e1" }}>
+                  Email <a href="mailto:bovcare@gmail.com" style={{ color: "#38bdf8", fontWeight: "600", textDecoration: "underline" }}>bovcare@gmail.com</a> to contact customer support and purchase credits.
+                </p>
+              </div>
+            </div>
           </div>
 
           {status.message && (
@@ -2136,16 +2145,76 @@ function App() {
                         className="report-section reveal-on-scroll"
                       >
                         <h3 className="section-title">{section.title}</h3>
-                        <ul>
-                          {section.items.map((item, index) => (
-                            <li
-                              key={`${section.title}-${index}`}
-                              style={{ "--item-index": index }}
-                            >
-                              {renderLineWithHighlights(item)}
-                            </li>
-                          ))}
-                        </ul>
+                        {normalizeSectionTitle(section.title).includes("topic breakdown") ? (
+                          (() => {
+                            const pairedTopics = pairHeadingDetailItems(section.items);
+                            const top4Topics = pairedTopics.slice(0, 4);
+
+                            return (
+                              <>
+                                <div className="section-row-list">
+                                  {top4Topics.map((topic, index) => (
+                                    <article
+                                      key={`topic-${index}`}
+                                      className="section-item-card"
+                                      style={{ "--item-index": index }}
+                                    >
+                                      <div className="section-item-headline">
+                                        <p className="section-item-heading">
+                                          {renderLineWithHighlights(topic.heading)}
+                                        </p>
+                                      </div>
+                                      {topic.details ? (
+                                        <p className="section-item-details">
+                                          {renderLineWithHighlights(topic.details)}
+                                        </p>
+                                      ) : null}
+                                    </article>
+                                  ))}
+                                </div>
+
+                                {currentUser && currentReportId && (
+                                  <div className="detail-unlock-container">
+                                    {unlockedDetails?.topicBreakdown ? (
+                                      <div className="unlocked-action-container">
+                                        <button
+                                          type="button"
+                                          className="unlock-action-btn view-tab-btn"
+                                          onClick={() =>
+                                            handleUnlockRedirect("topics")
+                                          }
+                                        >
+                                          Open Complete Topic Analysis (New Tab)
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="unlock-action-btn"
+                                        onClick={() =>
+                                          handleUnlockRedirect("topics")
+                                        }
+                                      >
+                                        Open Complete Topic Analysis (-1 credit)
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()
+                        ) : (
+                          <ul>
+                            {section.items.map((item, index) => (
+                              <li
+                                key={`${section.title}-${index}`}
+                                style={{ "--item-index": index }}
+                              >
+                                {renderLineWithHighlights(item)}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
 
                         {normalizeSectionTitle(section.title).includes(
                           "weakness",

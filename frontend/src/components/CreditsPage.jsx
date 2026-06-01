@@ -125,7 +125,6 @@ export default function CreditsPage({ onBack }) {
             <h2>Manage Credits</h2>
             <p className="credits-subtitle-note">Claim your free weekly credits below.</p>
           </div>
-
           <div className="credits-claim-section">
             <div className="credits-claim-card">
               <div className="credits-claim-info">
@@ -156,8 +155,16 @@ export default function CreditsPage({ onBack }) {
                 </button>
               </div>
             </div>
-          </div>
 
+            <div className="credits-claim-card" style={{ border: "1px dashed #475569", background: "rgba(15, 23, 42, 0.4)", marginTop: "1.2rem" }}>
+              <div className="credits-claim-info">
+                <h3>Need more credits?</h3>
+                <p style={{ margin: "0.25rem 0 0", color: "#cbd5e1" }}>
+                  Email <a href="mailto:bovcare@gmail.com" style={{ color: "#38bdf8", fontWeight: "600", textDecoration: "underline" }}>bovcare@gmail.com</a> to contact customer support and purchase credits.
+                </p>
+              </div>
+            </div>
+          </div>
           {status.message && (
             <div className={`profile-status-msg ${status.type}`} style={{ marginTop: "2rem" }}>
               {status.type === "success" ? (

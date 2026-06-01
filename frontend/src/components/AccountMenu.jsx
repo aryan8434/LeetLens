@@ -7,7 +7,7 @@ export default function AccountMenu({
   onCreditsClick,
   onHistoryClick,
 }) {
-  const { currentUser, userProfile, signOut } = useAuth();
+  const { currentUser, userProfile, credits, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -142,7 +142,7 @@ export default function AccountMenu({
                 <line x1="12" y1="8" x2="12" y2="16" />
                 <line x1="8" y1="12" x2="16" y2="12" />
               </svg>
-              <span>Credits</span>
+              <span>Credits: {credits} left</span>
             </button>
 
             <button
