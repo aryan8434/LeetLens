@@ -558,7 +558,7 @@ async function logSearchForUser({
     logData.photo = photo;
   }
 
-  if (type === "ai_report" && reportContent) {
+  if ((type === "ai_report" || type === "linkedin_report") && reportContent) {
     logData.report = reportContent;
     logData.analysisData = analysisData;
     logData.details = {
@@ -1187,6 +1187,93 @@ app.post("/api/log-unregistered-visit", async (req, res) => {
     console.error("Failed to log unregistered visit:", error);
     return res.status(500).json({
       error: "Unable to log unregistered visit.",
+      details: error.message,
+    });
+  }
+});
+
+app.post("/api/linkedin/analyze", verifyFirebaseToken, async (req, res) => {
+  const profileText = (req.body?.profileText || "").toString().trim();
+  if (!profileText) {
+    return res.status(400).json({ error: "Profile text is required." });
+  }
+
+  try {
+    await ensureUserDocument(req.authUser, req);
+    await requireAvailableCredit(req.authUser.uid);
+
+    const prompt = [
+      "You are an expert technical recruiter and resume reviewer.",
+      "Analyze the following copy-pasted LinkedIn profile / resume content.",
+      "Generate a practical, beautiful 5-section evaluation report including:",
+      "1. Professional Summary (Review their headline, industry positioning, and bio)",
+      "2. Key Technical & Professional Skills (Highlight strengths and list any major missing keywords/technologies for general Software Engineering roles)",
+      "3. Experience Depth & Impact (Evaluate the descriptions of past jobs, recommend STAR format improvements where appropriate)",
+      "4. Actionable Improvements (Bullet points on how to make their resume/profile look more impressive to recruiters)",
+      "5. Preparation Plan (A 4-week recommendation roadmap to strengthen their skills and profile)",
+      "",
+      "Profile Content:",
+      profileText.slice(0, 10000),
+      "",
+      "Format the output as clean markdown without any surrounding conversation.",
+    ].join("\n");
+
+    const response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert competitive programming coach and hiring evaluator. Follow user instructions exactly.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      return res
+        .status(502)
+        .json({ error: payload.error?.message || "Groq API request failed." });
+    }
+
+    const report = payload.choices?.[0]?.message?.content;
+    if (!report) {
+      return res
+        .status(502)
+        .json({ error: "Groq returned an empty response." });
+    }
+
+    const remainingCredits = await consumeOneCredit(req.authUser.uid);
+
+    // Log search for user
+    const reportId = await logSearchForUser({
+      uid: req.authUser.uid,
+      username: "LinkedIn Profile",
+      req,
+      type: "linkedin_report",
+      reportContent: report,
+      analysisData: { profileTextSnippet: profileText.slice(0, 500) },
+    });
+
+    return res.json({ report, remainingCredits, reportId });
+  } catch (error) {
+    const status = error.status || 500;
+    return res.status(status).json({
+      error:
+        status === 402
+          ? "You have no credits remaining."
+          : "Failed to analyze LinkedIn profile.",
       details: error.message,
     });
   }

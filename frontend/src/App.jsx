@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import "./App.css";
 import { useAuth } from "./contexts/AuthContext";
-import AuthModal from "./components/AuthModal";
+import AuthPage from "./components/AuthPage";
 import AccountMenu from "./components/AccountMenu";
 import ProfilePage from "./components/ProfilePage";
 import EvaluationHistory from "./components/EvaluationHistory";
@@ -16,8 +16,19 @@ const RECENT_SEARCHES_KEY = "leetlensRecentSearches_v1";
 
 function getApiErrorMessage(data, fallback) {
   const base = data?.error || fallback;
-  if (data?.details && data.details !== base) {
-    return `${base} (${data.details})`;
+  const details = data?.details || "";
+
+  if (
+    base.toLowerCase().includes("not found") || 
+    base.toLowerCase().includes("does not exist") ||
+    details.toLowerCase().includes("not found") ||
+    details.toLowerCase().includes("does not exist")
+  ) {
+    return "LeetCode username not found. Please recheck the username and try again.";
+  }
+
+  if (details && details !== base) {
+    return `${base} (${details})`;
   }
 
   return base;
@@ -1106,6 +1117,86 @@ function StandaloneDetailPage() {
   );
 }
 
+function LandingPage({ onAnalyzeClick }) {
+  return (
+    <div className="landing-page-wrapper">
+      <header className="landing-hero">
+        <span className="landing-badge">AI-Powered Analytics</span>
+        <h2 className="landing-title">
+          Welcome to <span>LeetLens</span>
+        </h2>
+        <p className="landing-subtitle">
+          Analyze your LeetCode profile with ease. Gain hiring-focused readiness reports, track solved distributions, and unlock tailored preparation curricula.
+        </p>
+        <div className="landing-action-container">
+          <button type="button" className="landing-action-btn" onClick={onAnalyzeClick}>
+            <span>Analyzer Now</span>
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <section className="landing-features-section">
+        <h3>Platform Highlights</h3>
+        <div className="landing-features-grid">
+          <div className="landing-feature-card">
+            <div className="landing-feature-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+              </svg>
+            </div>
+            <h4 className="landing-feature-title">Candidate Analytics</h4>
+            <p className="landing-feature-desc">
+              Track solved problem counts, streaks, difficulty distribution, and topic coverage with detailed metrics.
+            </p>
+          </div>
+
+          <div className="landing-feature-card">
+            <div className="landing-feature-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                <path d="M2 17l10 5 10-5"></path>
+                <path d="M2 12l10 5 10-5"></path>
+              </svg>
+            </div>
+            <h4 className="landing-feature-title">AI Evaluation Report</h4>
+            <p className="landing-feature-desc">
+              Get an overall skill score, company-wise interview readiness ratings, and a day-by-day customized preparation curriculum.
+            </p>
+          </div>
+
+          <div className="landing-feature-card">
+            <div className="landing-feature-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </div>
+            <h4 className="landing-feature-title">Secure & Automated</h4>
+            <p className="landing-feature-desc">
+              Manage your balance, reuse cached evaluations to save credits, and explore registered user analytics easily.
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const { currentUser, credits, creditsReady, setCredits } = useAuth();
 
@@ -1156,6 +1247,7 @@ function App() {
     if (prevUserRef.current && !currentUser) {
       // Logout happened
       logVisitEvent(null);
+      setView("landing");
     }
     prevUserRef.current = currentUser;
   }, [currentUser]);
@@ -1176,8 +1268,7 @@ function App() {
   const [showAllTopics, setShowAllTopics] = useState(false);
   const [showReportPage, setShowReportPage] = useState(false);
   const [showReportSidebar, setShowReportSidebar] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [view, setView] = useState("home"); // "home" or "profile" or "history"
+  const [view, setView] = useState("landing"); // "landing" or "auth" or "home" or "profile" or "history" or "credits"
   const [showZeroCreditsModal, setShowZeroCreditsModal] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -1494,10 +1585,10 @@ function App() {
   };
 
   useEffect(() => {
-    if (!currentUser) {
+    if (currentUser && view === "landing") {
       setView("home");
     }
-  }, [currentUser]);
+  }, [currentUser, view]);
 
   useEffect(() => {
     const targets = document.querySelectorAll(".reveal-on-scroll");
@@ -1870,7 +1961,11 @@ function App() {
   return (
     <main className="container">
       <header className="app-header">
-        <div className="brand-row">
+        <div
+          className="brand-row"
+          style={{ cursor: "pointer" }}
+          onClick={() => setView(currentUser ? "home" : "landing")}
+        >
           <img src="/logo.png" alt="LeetLens logo" className="brand-logo" />
           <h1 className="brand-wordmark">
             <span className="leet">Leet</span>
@@ -1879,7 +1974,7 @@ function App() {
         </div>
         {!showReportPage && (
           <AccountMenu
-            onLogin={() => setShowAuthModal(true)}
+            onLogin={() => setView("auth")}
             onProfileClick={() => setView("profile")}
             onCreditsClick={() => setView("credits")}
             onHistoryClick={() => setView("history")}
@@ -1887,7 +1982,28 @@ function App() {
         )}
       </header>
 
-      {view === "profile" ? (
+      {view === "landing" ? (
+        <LandingPage
+          onAnalyzeClick={() => {
+            if (currentUser) {
+              setView("home");
+            } else {
+              setView("auth");
+            }
+          }}
+        />
+      ) : view === "auth" ? (
+        <AuthPage
+          onBackToLanding={() => setView("landing")}
+          onAuthSuccess={(user) => {
+            logVisitEvent(user);
+            setView("home");
+            if (username) {
+              setShowReportPage(true);
+            }
+          }}
+        />
+      ) : view === "profile" ? (
         <ProfilePage onBack={() => setView("home")} />
       ) : view === "history" ? (
         <EvaluationHistory
@@ -2261,7 +2377,10 @@ function App() {
                       <button
                         type="button"
                         className="unlock-btn"
-                        onClick={() => setShowAuthModal(true)}
+                        onClick={() => {
+                          setView("auth");
+                          setShowReportPage(false);
+                        }}
                       >
                         Sign In to Unlock Full Report
                       </button>
@@ -2606,14 +2725,6 @@ function App() {
         </section>
       ) : null}
 
-      {showAuthModal ? (
-        <AuthModal
-          onClose={() => setShowAuthModal(false)}
-          onAuthSuccess={(user) => {
-            logVisitEvent(user);
-          }}
-        />
-      ) : null}
 
       {showZeroCreditsModal ? (
         <div

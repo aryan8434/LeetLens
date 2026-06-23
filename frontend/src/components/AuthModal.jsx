@@ -1,6 +1,29 @@
 import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 
+function getReadableAuthError(error) {
+  if (!error) return "Authentication failed.";
+  const code = error.code;
+  switch (code) {
+    case "auth/invalid-email":
+      return "Invalid email address. Please check and try again.";
+    case "auth/user-not-found":
+      return "User does not exist. Please check your email or sign up.";
+    case "auth/wrong-password":
+      return "Incorrect password. Please try again.";
+    case "auth/email-already-in-use":
+      return "This email is already in use. Please log in.";
+    case "auth/weak-password":
+      return "Password is too weak. Please use at least 6 characters.";
+    case "auth/invalid-credential":
+      return "Invalid email or password. Please recheck.";
+    case "auth/popup-closed-by-user":
+      return "Google sign-in was closed. Please try again.";
+    default:
+      return error.message?.replace(/^Firebase:\s*/, "") || "Authentication failed.";
+  }
+}
+
 export default function AuthModal({ onClose, onAuthSuccess }) {
   const { signIn, signUp, signInWithGoogle } = useAuth();
   const [mode, setMode] = useState("login");
@@ -24,7 +47,7 @@ export default function AuthModal({ onClose, onAuthSuccess }) {
       onAuthSuccess?.(credential?.user);
       onClose?.();
     } catch (authError) {
-      setError(authError?.message || "Authentication failed.");
+      setError(getReadableAuthError(authError));
     } finally {
       setLoading(false);
     }
@@ -38,7 +61,7 @@ export default function AuthModal({ onClose, onAuthSuccess }) {
       onAuthSuccess?.(credential?.user);
       onClose?.();
     } catch (authError) {
-      setError(authError?.message || "Google sign in failed.");
+      setError(getReadableAuthError(authError));
     } finally {
       setLoading(false);
     }
