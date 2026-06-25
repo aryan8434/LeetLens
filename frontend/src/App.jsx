@@ -1681,7 +1681,11 @@ function App() {
       }
 
       setShowAllTopics(false);
-      setShowReportPage(false);
+      if (!currentUser) {
+        handleCoachReport(false);
+      } else {
+        setShowReportPage(false);
+      }
     } catch (fetchError) {
       setAnalysis(null);
       setError(fetchError.message || "Unable to fetch LeetCode stats.");
@@ -1985,11 +1989,7 @@ function App() {
       {view === "landing" ? (
         <LandingPage
           onAnalyzeClick={() => {
-            if (currentUser) {
-              setView("home");
-            } else {
-              setView("auth");
-            }
+            setView("home");
           }}
         />
       ) : view === "auth" ? (
