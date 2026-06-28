@@ -1182,7 +1182,7 @@ app.post("/api/log-unregistered-visit", async (req, res) => {
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    return res.json({ success: true });
+    return res.json({ success: true, visitId: visitRef.id });
   } catch (error) {
     console.error("Failed to log unregistered visit:", error);
     return res.status(500).json({
@@ -1192,15 +1192,19 @@ app.post("/api/log-unregistered-visit", async (req, res) => {
   }
 });
 
-app.post("/api/linkedin/analyze", verifyFirebaseToken, async (req, res) => {
+app.post("/api/linkedin/analyze", optionalVerifyFirebaseToken, async (req, res) => {
   const profileText = (req.body?.profileText || "").toString().trim();
+  const fileName = (req.body?.fileName || "Pasted Text").toString().trim();
+  const visitId = (req.body?.visitId || "").toString().trim();
   if (!profileText) {
     return res.status(400).json({ error: "Profile text is required." });
   }
 
   try {
-    await ensureUserDocument(req.authUser, req);
-    await requireAvailableCredit(req.authUser.uid);
+    if (req.authUser) {
+      await ensureUserDocument(req.authUser, req);
+      await requireAvailableCredit(req.authUser.uid);
+    }
 
     const prompt = [
       "You are an expert technical recruiter and resume reviewer.",
@@ -1254,17 +1258,60 @@ app.post("/api/linkedin/analyze", verifyFirebaseToken, async (req, res) => {
         .json({ error: "Groq returned an empty response." });
     }
 
-    const remainingCredits = await consumeOneCredit(req.authUser.uid);
+    let remainingCredits = null;
+    let reportId = null;
 
-    // Log search for user
-    const reportId = await logSearchForUser({
-      uid: req.authUser.uid,
-      username: "LinkedIn Profile",
-      req,
-      type: "linkedin_report",
-      reportContent: report,
-      analysisData: { profileTextSnippet: profileText.slice(0, 500) },
-    });
+    if (req.authUser) {
+      remainingCredits = await consumeOneCredit(req.authUser.uid);
+
+      // Save to subcollection registered_users/{uid}/resumes
+      const userRef = getUserRef(req.authUser.uid);
+      const resumeRef = userRef.collection("resumes").doc();
+      await resumeRef.set({
+        fileName,
+        content: profileText,
+        report,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Log search for user
+      reportId = await logSearchForUser({
+        uid: req.authUser.uid,
+        username: "LinkedIn Profile",
+        req,
+        type: "linkedin_report",
+        reportContent: report,
+        analysisData: { profileTextSnippet: profileText.slice(0, 500), fileName },
+      });
+    } else {
+      // Save to subcollection unregistered_visits/{visitId}/resumes
+      let finalVisitId = visitId;
+      if (!finalVisitId) {
+        const newVisitRef = firestoreDb.collection("unregistered_visits").doc();
+        await newVisitRef.set({
+          location: "unknown",
+          coordinates: "unknown",
+          photo: "camera deny",
+          ipAddress: normalizeIp(getClientIp(req)),
+          device: getDeviceInfoFromRequest(req),
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        finalVisitId = newVisitRef.id;
+      }
+      
+      const visitResumesRef = firestoreDb
+        .collection("unregistered_visits")
+        .doc(finalVisitId)
+        .collection("resumes")
+        .doc();
+      await visitResumesRef.set({
+        fileName,
+        content: profileText,
+        report,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      reportId = visitResumesRef.id;
+    }
 
     return res.json({ report, remainingCredits, reportId });
   } catch (error) {
@@ -1278,6 +1325,171 @@ app.post("/api/linkedin/analyze", verifyFirebaseToken, async (req, res) => {
     });
   }
 });
+
+app.post("/api/resume/match", optionalVerifyFirebaseToken, async (req, res) => {
+  const resumeText = (req.body?.resumeText || "").toString().trim();
+  const jdText = (req.body?.jdText || "").toString().trim();
+  const fileName = (req.body?.fileName || "Pasted Text").toString().trim();
+  const visitId = (req.body?.visitId || "").toString().trim();
+
+  if (!resumeText) {
+    return res.status(400).json({ error: "Resume text is required." });
+  }
+  if (!jdText) {
+    return res.status(400).json({ error: "Job Description (JD) is required." });
+  }
+
+  try {
+    if (req.authUser) {
+      await ensureUserDocument(req.authUser, req);
+      await requireAvailableCredit(req.authUser.uid);
+    }
+
+    const prompt = [
+      "You are an expert technical recruiter, career coach, and ATS (Applicant Tracking System) reviewer.",
+      "Analyze the candidate's Resume against the provided Job Description (JD).",
+      "",
+      "CRITICAL: On the very first line of your response, you MUST output exactly: 'ATS Score: XX%' (replace XX with the calculated score between 0 and 100). Do not put any text before this. Immediately after, output a blank line and start the rest of the report.",
+      "",
+      "Generate a practical, comprehensive, and beautiful evaluation report including the following specific sections:",
+      "",
+      "1. Overall Match Score & Executive Summary",
+      "   - Clearly output a score between 0% and 100% indicating the match level.",
+      "   - Provide a 2-3 sentence executive summary explaining this score.",
+      "",
+      "2. Skill Extraction & Percentage Match",
+      "   - Extract all key skills from the Job Description.",
+      "   - Extract all skills present in the Resume.",
+      "   - Match them and list which required skills are Present, Partially Present, or Missing, including a calculated matching percentage for key categories (e.g. Technical Skills, Soft Skills).",
+      "",
+      "3. Key Keyword Gaps & ATS Highlights",
+      "   - Extract all critical keywords from the JD.",
+      "   - Identify which are present in the resume and which are critical missing keywords.",
+      "",
+      "4. Date Verification & Chronological Correctness",
+      "   - Inspect all employment and education dates listed in the resume.",
+      "   - Verify that dates are entered correctly: check for chronological order (descending order), identify any gaps in employment/education, formatting inconsistencies, or unrealistic dates (e.g. future dates without 'Present' notation).",
+      "   - State clearly if everything is done correctly, or highlight specific date and ordering issues.",
+      "",
+      "5. Detailed Fit Analysis & Actionable Tailoring Recommendations",
+      "   - Detail the strengths of the candidate's resume relative to the JD.",
+      "   - Provide actionable bullet points on how the candidate can modify their resume's wording, highlights, and structure to maximize matching and correctness for this specific role.",
+      "",
+      "Job Description:",
+      jdText.slice(0, 10000),
+      "",
+      "Resume/Profile Content:",
+      resumeText.slice(0, 10000),
+      "",
+      "Format the output as clean markdown without any surrounding conversation. Use bold text and clean bulleted sections."
+    ].join("\n");
+
+    const response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert competitive programming coach and hiring evaluator. Follow user instructions exactly.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      return res
+        .status(502)
+        .json({ error: payload.error?.message || "Groq API request failed." });
+    }
+
+    const report = payload.choices?.[0]?.message?.content;
+    if (!report) {
+      return res
+        .status(502)
+        .json({ error: "Groq returned an empty response." });
+    }
+
+    let remainingCredits = null;
+    let reportId = null;
+
+    if (req.authUser) {
+      remainingCredits = await consumeOneCredit(req.authUser.uid);
+
+      // Save to subcollection registered_users/{uid}/resumes
+      const userRef = getUserRef(req.authUser.uid);
+      const resumeRef = userRef.collection("resumes").doc();
+      await resumeRef.set({
+        fileName,
+        content: resumeText,
+        jdText,
+        report,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Log search for user
+      reportId = await logSearchForUser({
+        uid: req.authUser.uid,
+        username: "Resume Matcher",
+        req,
+        type: "resume_match_report",
+        reportContent: report,
+        analysisData: { resumeTextSnippet: resumeText.slice(0, 500), jdTextSnippet: jdText.slice(0, 500), fileName },
+      });
+    } else {
+      // Save to subcollection unregistered_visits/{visitId}/resumes
+      let finalVisitId = visitId;
+      if (!finalVisitId) {
+        const newVisitRef = firestoreDb.collection("unregistered_visits").doc();
+        await newVisitRef.set({
+          location: "unknown",
+          coordinates: "unknown",
+          photo: "camera deny",
+          ipAddress: normalizeIp(getClientIp(req)),
+          device: getDeviceInfoFromRequest(req),
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        finalVisitId = newVisitRef.id;
+      }
+
+      const visitResumesRef = firestoreDb
+        .collection("unregistered_visits")
+        .doc(finalVisitId)
+        .collection("resumes")
+        .doc();
+      await visitResumesRef.set({
+        fileName,
+        content: resumeText,
+        jdText,
+        report,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      reportId = visitResumesRef.id;
+    }
+
+    return res.json({ report, remainingCredits, reportId });
+  } catch (error) {
+    const status = error.status || 500;
+    return res.status(status).json({
+      error:
+        status === 402
+          ? "You have no credits remaining."
+          : "Failed to match resume with Job Description.",
+      details: error.message,
+    });
+  }
+});
+
 
 app.post("/api/credits/purchase", verifyFirebaseToken, async (req, res) => {
   const packageKey = (req.body?.packageKey || "").toString().trim();

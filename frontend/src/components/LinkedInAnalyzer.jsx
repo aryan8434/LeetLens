@@ -1,165 +1,180 @@
-import React, { useState } from "react";
-import { useAuth } from "../contexts/AuthContext";
+import React from "react";
 
-export default function LinkedInAnalyzer({ onBack, credits, onUpdateCredits }) {
-  const { currentUser } = useAuth();
-  const [profileText, setProfileText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [report, setReport] = useState("");
-
-  const API_BASE_URL = (
-    import.meta.env.VITE_API_BASE_URL ||
-    (import.meta.env.DEV ? "http://localhost:5000" : "")
-  ).replace(/\/$/, "");
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const trimmed = profileText.trim();
-    if (!trimmed) {
-      setError("Please paste your LinkedIn profile or resume text first.");
-      return;
-    }
-
-    if (Number(credits) <= 0) {
-      setError("You have no credits remaining. Please purchase more credits.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setReport("");
-
-    try {
-      const token = await currentUser.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/api/linkedin/analyze`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ profileText: trimmed }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to analyze LinkedIn profile.");
-      }
-
-      setReport(data.report);
-      if (typeof data.remainingCredits === "number") {
-        onUpdateCredits?.(data.remainingCredits);
-      }
-    } catch (err) {
-      setError(err.message || "An unexpected error occurred.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCopy = () => {
-    if (!report) return;
-    navigator.clipboard.writeText(report);
-    alert("Report copied to clipboard!");
-  };
-
+export default function LinkedInAnalyzer({ onBack }) {
   return (
-    <div className="linkedin-analyzer-page">
-      <div className="page-header-row" style={{ display: "flex", alignItems: "center", marginBottom: "1.5rem" }}>
-        <button type="button" className="profile-back-btn" onClick={onBack}>
-          ← Back
-        </button>
-        <h2 style={{ marginLeft: "1rem", color: "white" }}>LinkedIn & Resume Analyzer</h2>
+    <div className="linkedin-analyzer-page" style={{ padding: "2rem", minHeight: "80vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
+      {/* Back Button */}
+      <button 
+        type="button" 
+        className="profile-back-btn" 
+        onClick={onBack}
+        style={{
+          position: "absolute",
+          top: "2rem",
+          left: "2rem",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+          background: "rgba(255, 255, 255, 0.05)",
+          border: "1px solid rgba(255, 255, 255, 0.1)",
+          color: "white",
+          padding: "0.6rem 1.2rem",
+          borderRadius: "8px",
+          cursor: "pointer",
+          transition: "all 0.3s ease",
+        }}
+      >
+        ← Back
+      </button>
+
+      {/* Decorative background glow elements */}
+      <div style={{
+        position: "absolute",
+        width: "300px",
+        height: "300px",
+        background: "radial-gradient(circle, rgba(167, 139, 250, 0.2) 0%, rgba(167, 139, 250, 0) 70%)",
+        top: "20%",
+        left: "30%",
+        zIndex: 0,
+        filter: "blur(40px)",
+        pointerEvents: "none"
+      }} />
+      <div style={{
+        position: "absolute",
+        width: "250px",
+        height: "250px",
+        background: "radial-gradient(circle, rgba(56, 189, 248, 0.2) 0%, rgba(56, 189, 248, 0) 70%)",
+        bottom: "20%",
+        right: "30%",
+        zIndex: 0,
+        filter: "blur(30px)",
+        pointerEvents: "none"
+      }} />
+
+      {/* Glassmorphic card */}
+      <div style={{
+        maxWidth: "600px",
+        width: "100%",
+        background: "rgba(15, 23, 42, 0.45)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        border: "1px solid rgba(255, 255, 255, 0.08)",
+        borderRadius: "24px",
+        padding: "3rem 2rem",
+        textAlign: "center",
+        boxShadow: "0 20px 40px rgba(0, 0, 0, 0.3)",
+        zIndex: 1,
+        animation: "fadeInUp 0.8s ease-out"
+      }}>
+        {/* Glowing LinkedIn icon representation */}
+        <div style={{
+          width: "80px",
+          height: "80px",
+          borderRadius: "50%",
+          background: "linear-gradient(135deg, #a78bfa 0%, #38bdf8 100%)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          margin: "0 auto 2rem auto",
+          boxShadow: "0 0 20px rgba(167, 139, 250, 0.5)",
+          animation: "pulse 2s infinite alternate"
+        }}>
+          <svg
+            width="40"
+            height="40"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="white"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
+            <rect x="2" y="9" width="4" height="12" />
+            <circle cx="4" cy="4" r="2" />
+          </svg>
+        </div>
+
+        <h2 style={{
+          fontSize: "2rem",
+          fontWeight: "800",
+          background: "linear-gradient(to right, #ffffff, #94a3b8)",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          marginBottom: "0.5rem"
+        }}>
+          LinkedIn Analyzer
+        </h2>
+        
+        {/* Holographic badge */}
+        <div style={{
+          display: "inline-block",
+          padding: "0.4rem 1rem",
+          borderRadius: "9999px",
+          background: "rgba(167, 139, 250, 0.1)",
+          border: "1px solid rgba(167, 139, 250, 0.3)",
+          color: "#c084fc",
+          fontWeight: "600",
+          fontSize: "0.85rem",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          marginBottom: "1.5rem"
+        }}>
+          ✨ Coming Soon
+        </div>
+
+        <p style={{
+          color: "#94a3b8",
+          fontSize: "1.05rem",
+          lineHeight: "1.6",
+          maxWidth: "450px",
+          margin: "0 auto 2.5rem auto"
+        }}>
+          Our AI recruiter module is currently in training to analyze your LinkedIn headlines, experience depth, and networking presence to recommend direct optimizations.
+        </p>
+
+        {/* Elegant Progress bar representation */}
+        <div style={{
+          width: "80%",
+          height: "6px",
+          background: "rgba(255, 255, 255, 0.05)",
+          borderRadius: "9999px",
+          margin: "0 auto",
+          overflow: "hidden",
+          position: "relative"
+        }}>
+          <div style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            height: "100%",
+            width: "70%",
+            background: "linear-gradient(90deg, #a78bfa, #38bdf8)",
+            borderRadius: "9999px",
+            animation: "progressLoading 3s ease-in-out infinite alternate"
+          }} />
+        </div>
+        <div style={{
+          color: "#64748b",
+          fontSize: "0.8rem",
+          marginTop: "0.5rem",
+          fontWeight: "500"
+        }}>
+          Training Progress: 70%
+        </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: report ? "1fr 1.2fr" : "1fr", gap: "2rem" }}>
-        {/* Left Column: Form Editor */}
-        <section className="card analyze-card" style={{ height: "fit-content" }}>
-          <p className="topics-note" style={{ marginBottom: "1.2rem" }}>
-            Paste your LinkedIn profile text (from "Save to PDF" or bio) or raw resume text below. Our AI recruiter will analyze your headlines, experience depth, skill positioning, and suggest STAR-format enhancements.
-          </p>
-
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <textarea
-              className="linkedin-textarea"
-              value={profileText}
-              onChange={(e) => setProfileText(e.target.value)}
-              placeholder="Paste your LinkedIn summary, work experience, or full resume text here..."
-              rows={12}
-              style={{
-                width: "100%",
-                borderRadius: "8px",
-                padding: "1rem",
-                background: "rgba(10, 15, 30, 0.6)",
-                border: "1px solid var(--accent)",
-                color: "white",
-                fontFamily: "inherit",
-                fontSize: "0.95rem",
-                lineHeight: "1.5",
-                resize: "vertical"
-              }}
-            />
-
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.5rem" }}>
-              <span className="chip" style={{ background: "rgba(167, 139, 250, 0.15)", border: "1px solid var(--accent)" }}>
-                {credits} Credits Remaining
-              </span>
-              <button
-                type="submit"
-                className="coach-button"
-                style={{ width: "auto", minWidth: "180px", margin: 0 }}
-                disabled={loading}
-              >
-                {loading ? "Analyzing..." : "Analyze Profile (-1 credit)"}
-              </button>
-            </div>
-          </form>
-
-          {error && (
-            <p className="error" style={{ marginTop: "1rem" }}>
-              {error}
-            </p>
-          )}
-        </section>
-
-        {/* Right Column: Report Display */}
-        {report && (
-          <section className="card report-card reveal-on-scroll" style={{ animation: "fadeInUp 0.5s ease" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "0.75rem" }}>
-              <h3 style={{ color: "var(--accent)" }}>Profile Assessment Report</h3>
-              <button type="button" className="profile-history-btn" onClick={handleCopy} style={{ margin: 0, padding: "6px 12px", fontSize: "0.85rem" }}>
-                Copy Report
-              </button>
-            </div>
-
-            <div className="report-markdown-scroll" style={{ maxHeight: "65vh", overflowY: "auto", paddingRight: "10px" }}>
-              {report.split("\n\n").map((paragraph, index) => {
-                if (paragraph.startsWith("#")) {
-                  const level = paragraph.match(/^#+/)[0].length;
-                  const text = paragraph.replace(/^#+\s*/, "");
-                  if (level === 1) return <h1 key={index} style={{ color: "white", margin: "1rem 0 0.5rem 0", fontSize: "1.6rem" }}>{text}</h1>;
-                  if (level === 2) return <h2 key={index} style={{ color: "var(--accent)", margin: "0.9rem 0 0.4rem 0", fontSize: "1.3rem" }}>{text}</h2>;
-                  return <h3 key={index} style={{ color: "white", margin: "0.8rem 0 0.3rem 0", fontSize: "1.1rem" }}>{text}</h3>;
-                }
-                if (paragraph.startsWith("-") || paragraph.startsWith("*")) {
-                  return (
-                    <ul key={index} style={{ margin: "0.5rem 0", paddingLeft: "1.2rem", color: "var(--text-secondary)" }}>
-                      {paragraph.split("\n").map((li, idx) => (
-                        <li key={idx} style={{ marginBottom: "4px", fontSize: "0.95rem" }}>{li.replace(/^[-*]\s*/, "")}</li>
-                      ))}
-                    </ul>
-                  );
-                }
-                return (
-                  <p key={index} style={{ color: "var(--text-secondary)", lineHeight: "1.6", margin: "0.6rem 0", fontSize: "0.95rem" }}>
-                    {paragraph}
-                  </p>
-                );
-              })}
-            </div>
-          </section>
-        )}
-      </div>
+      {/* Styled JSX for custom keyframes */}
+      <style>{`
+        @keyframes pulse {
+          0% { transform: scale(1); box-shadow: 0 0 20px rgba(167, 139, 250, 0.4); }
+          100% { transform: scale(1.08); box-shadow: 0 0 30px rgba(56, 189, 248, 0.7); }
+        }
+        @keyframes progressLoading {
+          0% { width: 50%; }
+          100% { width: 85%; }
+        }
+      `}</style>
     </div>
   );
 }

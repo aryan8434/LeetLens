@@ -182,6 +182,10 @@ export default function App() {
   const [unregisteredVisits, setUnregisteredVisits] = useState([]);
   const [userVisits, setUserVisits] = useState([]);
 
+  const [expandedUnregRows, setExpandedUnregRows] = useState(new Set());
+  const [unregResumesMap, setUnregResumesMap] = useState({});
+  const [userResumes, setUserResumes] = useState([]);
+
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
@@ -234,6 +238,33 @@ export default function App() {
     fetchMetrics();
   }, []);
 
+  const toggleUnregExpand = async (visitId) => {
+    const newExpanded = new Set(expandedUnregRows);
+    if (newExpanded.has(visitId)) {
+      newExpanded.delete(visitId);
+    } else {
+      newExpanded.add(visitId);
+      if (!unregResumesMap[visitId]) {
+        try {
+          const resumesSnap = await getDocs(
+            collection(db, "unregistered_visits", visitId, "resumes")
+          );
+          const list = [];
+          resumesSnap.forEach((d) => {
+            list.push({ id: d.id, ...d.data() });
+          });
+          setUnregResumesMap((prev) => ({
+            ...prev,
+            [visitId]: list.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)),
+          }));
+        } catch (e) {
+          console.error("Failed to load resumes for unregistered visit:", e);
+        }
+      }
+    }
+    setExpandedUnregRows(newExpanded);
+  };
+
   const openUserDetails = async (user) => {
     setSelectedUser(user);
     setEditingCreditsValue(user.credits || 0);
@@ -241,6 +272,7 @@ export default function App() {
     setErrorMsg(null);
     setUserSearches([]);
     setUserVisits([]);
+    setUserResumes([]);
 
     try {
       const searchesSnapshot = await getDocs(
@@ -265,6 +297,17 @@ export default function App() {
 
       setUserVisits(
         v.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
+      );
+
+      const resumesSnapshot = await getDocs(
+        collection(db, "registered_users", user.id, "resumes")
+      );
+      const r = [];
+      resumesSnapshot.forEach((docSnap) => {
+        r.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      setUserResumes(
+        r.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
       );
     } catch (err) {
       console.error("Failed to load user logs:", err);
@@ -775,9 +818,9 @@ export default function App() {
         </Box>
 
         <Grid container spacing={3}>
-          {/* Left Column: Management & Profile */}
+          {/* Column 1: Profile Summary */}
           <Grid item xs={12} md={4}>
-            <Card sx={{ p: 3, mb: 3 }}>
+            <Card sx={{ p: 3, height: "100%", display: "flex", flexDirection: "column" }}>
               <Typography variant="h6" fontWeight={700} sx={{ mb: 3 }}>
                 Profile Summary
               </Typography>
@@ -794,7 +837,7 @@ export default function App() {
                   />
                 </Box>
               )}
-              <List disablePadding>
+              <List disablePadding sx={{ flexGrow: 1 }}>
                 {[
                   { label: "Email", val: selectedUser.email, isAcc: true },
                   { label: "Name", val: selectedUser.name || "--" },
@@ -834,47 +877,102 @@ export default function App() {
                 ))}
               </List>
             </Card>
+          </Grid>
 
-            <Card sx={{ p: 3, mb: 3 }}>
+          {/* Column 2: Uploaded Resumes */}
+          <Grid item xs={12} md={4}>
+            <Card sx={{ p: 3, height: "100%", display: "flex", flexDirection: "column" }}>
               <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
-                Edit Credits
+                Uploaded Resumes
               </Typography>
-              <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
-                <TextField
-                  type="number"
-                  size="small"
-                  value={editingCreditsValue}
-                  onChange={(e) => setEditingCreditsValue(Number(e.target.value))}
-                  disabled={updateLoading}
-                  sx={{ flex: 1 }}
-                />
-                <Button variant="contained" onClick={() => saveCredits(selectedUser.id)} disabled={updateLoading}>
-                  {updateLoading ? "Saving..." : "Save"}
-                </Button>
-              </Box>
-            </Card>
-
-            <Card sx={{ p: 3, borderColor: "rgba(239, 68, 68, 0.3)", "&:hover": { borderColor: "#ef4444" } }}>
-              <Typography variant="h6" fontWeight={700} color="error.light" sx={{ mb: 1 }}>
-                Danger Zone
-              </Typography>
-              <Typography variant="body2" color="error.light" sx={{ mb: 2, opacity: 0.85, fontSize: "0.82rem" }}>
-                This permanently deletes the user's database record, resetting all credits and logs.
-              </Typography>
-              <Button
-                variant="contained"
-                color="error"
-                fullWidth
-                onClick={() => handleDeleteUserFromDetails(selectedUser.id)}
-                disabled={updateLoading}
-              >
-                Delete User Records
-              </Button>
+              {userResumes.length === 0 ? (
+                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", flexGrow: 1 }}>
+                  No resumes uploaded yet.
+                </Typography>
+              ) : (
+                <List disablePadding sx={{ overflowY: "auto", flexGrow: 1, maxHeight: 450 }}>
+                  {userResumes.map((resDoc, idx) => (
+                    <React.Fragment key={resDoc.id}>
+                      {idx > 0 && <Divider sx={{ my: 1.5, borderColor: "rgba(255,255,255,0.06)" }} />}
+                      <ListItem disablePadding sx={{ flexDirection: "column", alignItems: "flex-start" }}>
+                        <Typography variant="subtitle2" fontWeight={700} color="#8b5cf6" sx={{ width: "100%", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                          {resDoc.fileName}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
+                          Uploaded: {resDoc.timestamp?.toDate()?.toLocaleString() || "Unknown"}
+                        </Typography>
+                        <Box sx={{ display: "flex", gap: 1, width: "100%" }}>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            fullWidth
+                            onClick={() => setSelectedReportText(`RESUME CONTENT:\n\n${resDoc.content}`)}
+                            sx={{ fontSize: "0.75rem", py: 0.5 }}
+                          >
+                            Resume
+                          </Button>
+                          <Button
+                            variant="contained"
+                            size="small"
+                            fullWidth
+                            onClick={() => setSelectedReportText(resDoc.report)}
+                            sx={{ fontSize: "0.75rem", py: 0.5 }}
+                          >
+                            Report
+                          </Button>
+                        </Box>
+                      </ListItem>
+                    </React.Fragment>
+                  ))}
+                </List>
+              )}
             </Card>
           </Grid>
 
-          {/* Right Column: Search Logs & AI Reports */}
-          <Grid item xs={12} md={8}>
+          {/* Column 3: Edit Credits & Danger Zone */}
+          <Grid item xs={12} md={4}>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 3, height: "100%" }}>
+              <Card sx={{ p: 3, flexGrow: 1 }}>
+                <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
+                  Edit Credits
+                </Typography>
+                <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
+                  <TextField
+                    type="number"
+                    size="small"
+                    value={editingCreditsValue}
+                    onChange={(e) => setEditingCreditsValue(Number(e.target.value))}
+                    disabled={updateLoading}
+                    sx={{ flex: 1 }}
+                  />
+                  <Button variant="contained" onClick={() => saveCredits(selectedUser.id)} disabled={updateLoading}>
+                    {updateLoading ? "Saving..." : "Save"}
+                  </Button>
+                </Box>
+              </Card>
+
+              <Card sx={{ p: 3, borderColor: "rgba(239, 68, 68, 0.3)", "&:hover": { borderColor: "#ef4444" }, flexGrow: 1 }}>
+                <Typography variant="h6" fontWeight={700} color="error.light" sx={{ mb: 1 }}>
+                  Danger Zone
+                </Typography>
+                <Typography variant="body2" color="error.light" sx={{ mb: 2, opacity: 0.85, fontSize: "0.82rem" }}>
+                  This permanently deletes the user's database record, resetting all credits and logs.
+                </Typography>
+                <Button
+                  variant="contained"
+                  color="error"
+                  fullWidth
+                  onClick={() => handleDeleteUserFromDetails(selectedUser.id)}
+                  disabled={updateLoading}
+                >
+                  Delete User Records
+                </Button>
+              </Card>
+            </Box>
+          </Grid>
+
+          {/* Row 2: User Activity Log - Full Width */}
+          <Grid item xs={12}>
             <Paper sx={{ p: 4, minHeight: "100%" }}>
               <Typography variant="h5" fontWeight={800} sx={{ mb: 4 }}>
                 User Activity Log
@@ -1096,12 +1194,13 @@ export default function App() {
               <TableCell>Location</TableCell>
               <TableCell>Coordinates</TableCell>
               <TableCell>Visited At</TableCell>
+              <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {unregisteredVisits.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 6, color: "text.secondary" }}>
+                <TableCell colSpan={8} align="center" sx={{ py: 6, color: "text.secondary" }}>
                   No unregistered user visits logged yet.
                 </TableCell>
               </TableRow>
@@ -1110,66 +1209,197 @@ export default function App() {
               const dateVal = visit.timestamp?.toDate();
 
               return (
-                <TableRow hover key={visit.id}>
-                  <TableCell>
-                    {visit.photo && visit.photo.startsWith("data:image") ? (
-                      <Avatar
-                        src={visit.photo}
-                        sx={{
-                          width: 36,
-                          height: 36,
-                          border: "1.5px solid #8b5cf6",
-                          cursor: "pointer",
-                          "&:hover": { opacity: 0.8 },
-                        }}
-                        onClick={() => setSelectedReportText(visit.photo)}
-                      />
-                    ) : (
-                      <Avatar sx={{ width: 36, height: 36 }}>--</Avatar>
-                    )}
-                  </TableCell>
-                  <TableCell sx={{ color: "#8b5cf6", fontWeight: 600, fontFamily: "monospace" }}>
-                    {visit.ipAddress || "--"}
-                  </TableCell>
-                  <TableCell>
-                    <Box
-                      component="span"
-                      sx={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        px: 1.5,
-                        py: 0.5,
-                        borderRadius: "20px",
-                        fontSize: "0.8rem",
-                        background: "rgba(6, 182, 212, 0.1)",
-                        color: "#06b6d4",
-                        border: "1px solid rgba(6, 182, 212, 0.2)",
-                      }}
-                    >
-                      {visit.device?.type === "mobile" ? (
-                        <Smartphone size={12} style={{ marginRight: 6 }} />
+                <React.Fragment key={visit.id}>
+                  <TableRow hover>
+                    <TableCell>
+                      {visit.photo && visit.photo.startsWith("data:image") ? (
+                        <Avatar
+                          src={visit.photo}
+                          sx={{
+                            width: 36,
+                            height: 36,
+                            border: "1.5px solid #8b5cf6",
+                            cursor: "pointer",
+                            "&:hover": { opacity: 0.8 },
+                          }}
+                          onClick={() => setSelectedReportText(visit.photo)}
+                        />
                       ) : (
-                        <Monitor size={12} style={{ marginRight: 6 }} />
+                        <Avatar sx={{ width: 36, height: 36 }}>--</Avatar>
                       )}
-                      {visit.device?.vendor || "Generic"} {visit.device?.model || "Device"}
-                    </Box>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" fontWeight={500} color="text.primary">
-                      {visit.device?.os || "Unknown"}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {visit.device?.browser || "Browser"}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>{visit.location || "--"}</TableCell>
-                  <TableCell sx={{ fontFamily: "monospace" }}>{visit.coordinates || "--"}</TableCell>
-                  <TableCell>
-                    {dateVal
-                      ? dateVal.toLocaleDateString() + " " + dateVal.toLocaleTimeString()
-                      : "--"}
-                  </TableCell>
-                </TableRow>
+                    </TableCell>
+                    <TableCell sx={{ color: "#8b5cf6", fontWeight: 600, fontFamily: "monospace" }}>
+                      {visit.ipAddress || "--"}
+                    </TableCell>
+                    <TableCell>
+                      <Box
+                        component="span"
+                        sx={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          px: 1.5,
+                          py: 0.5,
+                          borderRadius: "20px",
+                          fontSize: "0.8rem",
+                          background: "rgba(6, 182, 212, 0.1)",
+                          color: "#06b6d4",
+                          border: "1px solid rgba(6, 182, 212, 0.2)",
+                        }}
+                      >
+                        {visit.device?.type === "mobile" ? (
+                          <Smartphone size={12} style={{ marginRight: 6 }} />
+                        ) : (
+                          <Monitor size={12} style={{ marginRight: 6 }} />
+                        )}
+                        {visit.device?.vendor || "Generic"} {visit.device?.model || "Device"}
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={500} color="text.primary">
+                        {visit.device?.os || "Unknown"}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {visit.device?.browser || "Browser"}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{visit.location || "--"}</TableCell>
+                    <TableCell sx={{ fontFamily: "monospace" }}>{visit.coordinates || "--"}</TableCell>
+                    <TableCell>
+                      {dateVal
+                        ? dateVal.toLocaleDateString() + " " + dateVal.toLocaleTimeString()
+                        : "--"}
+                    </TableCell>
+                    <TableCell align="right">
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => toggleUnregExpand(visit.id)}
+                        endIcon={
+                          <ChevronRight
+                            size={14}
+                            style={{
+                              transform: expandedUnregRows.has(visit.id) ? "rotate(90deg)" : "none",
+                              transition: "transform 0.2s",
+                            }}
+                          />
+                        }
+                      >
+                        Resumes
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={8}>
+                      <Collapse in={expandedUnregRows.has(visit.id)} timeout="auto" unmountOnExit>
+                        <Box sx={{ p: 2, background: "rgba(0, 0, 0, 0.15)", borderRadius: "8px", m: 1.5 }}>
+                          <Grid container spacing={2}>
+                            {/* Column 1: Visit Summary */}
+                            <Grid item xs={12} md={4}>
+                              <Paper sx={{ p: 2.5, background: "#0f172a", border: "1px solid rgba(255, 255, 255, 0.05)", borderRadius: "8px", height: "100%" }}>
+                                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2, fontWeight: 700, textTransform: "uppercase" }}>
+                                  Visit Session Info
+                                </Typography>
+                                {visit.photo && visit.photo.startsWith("data:image") && (
+                                  <Box sx={{ display: "flex", justifyContent: "center", mb: 2 }}>
+                                    <Avatar
+                                      src={visit.photo}
+                                      variant="rounded"
+                                      sx={{
+                                        width: 80,
+                                        height: 80,
+                                        border: "1.5px solid #8b5cf6",
+                                        cursor: "pointer",
+                                        "&:hover": { opacity: 0.8 },
+                                      }}
+                                      onClick={() => setSelectedReportText(visit.photo)}
+                                    />
+                                  </Box>
+                                )}
+                                <List disablePadding>
+                                  {[
+                                    { label: "IP Address", val: visit.ipAddress || "--", isCode: true },
+                                    { label: "Location", val: visit.location || "--" },
+                                    { label: "Coordinates", val: visit.coordinates || "--" },
+                                    { label: "Device Type", val: visit.device?.type || "--" },
+                                    { label: "Device Info", val: `${visit.device?.vendor || ""} ${visit.device?.model || ""}`.trim() || "--" },
+                                    { label: "OS & Browser", val: `${visit.device?.os || ""} - ${visit.device?.browser || ""}`.trim() || "--" },
+                                    { label: "Visited At", val: visit.timestamp?.toDate()?.toLocaleString() || "--" },
+                                  ].map((item, idx) => (
+                                    <React.Fragment key={item.label}>
+                                      {idx > 0 && <Divider sx={{ my: 1, borderColor: "rgba(255,255,255,0.06)" }} />}
+                                      <ListItem disablePadding sx={{ flexDirection: "column", alignItems: "flex-start" }}>
+                                        <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ textTransform: "uppercase", fontSize: "0.7rem", mb: 0.5 }}>
+                                          {item.label}
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontFamily: item.isCode ? "monospace" : "inherit" }}>
+                                          {item.val}
+                                        </Typography>
+                                      </ListItem>
+                                    </React.Fragment>
+                                  ))}
+                                </List>
+                              </Paper>
+                            </Grid>
+
+                            {/* Column 2: Uploaded Resumes */}
+                            <Grid item xs={12} md={8}>
+                              <Paper sx={{ p: 2.5, background: "#0f172a", border: "1px solid rgba(255, 255, 255, 0.05)", borderRadius: "8px", height: "100%" }}>
+                                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2, fontWeight: 700, textTransform: "uppercase" }}>
+                                  Uploaded Resumes & Reports
+                                </Typography>
+                                {!unregResumesMap[visit.id] ? (
+                                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 2 }}>
+                                    <CircularProgress size={16} />
+                                    <Typography variant="body2" color="text.secondary">Loading resumes...</Typography>
+                                  </Box>
+                                ) : unregResumesMap[visit.id].length === 0 ? (
+                                  <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", py: 1 }}>
+                                    No resumes uploaded by this unregistered visitor.
+                                  </Typography>
+                                ) : (
+                                  <Grid container spacing={2}>
+                                    {unregResumesMap[visit.id].map((resDoc) => (
+                                      <Grid item xs={12} sm={6} key={resDoc.id}>
+                                        <Box sx={{ p: 2, background: "rgba(30, 41, 59, 0.4)", border: "1px solid rgba(255, 255, 255, 0.05)", borderRadius: "8px" }}>
+                                          <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#8b5cf6", mb: 0.5, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                                            {resDoc.fileName}
+                                          </Typography>
+                                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
+                                            Uploaded: {resDoc.timestamp?.toDate()?.toLocaleString() || "Unknown"}
+                                          </Typography>
+                                          <Box sx={{ display: "flex", gap: 1 }}>
+                                            <Button
+                                              variant="outlined"
+                                              size="small"
+                                              fullWidth
+                                              onClick={() => setSelectedReportText(`RESUME CONTENT:\n\n${resDoc.content}`)}
+                                              sx={{ fontSize: "0.75rem" }}
+                                            >
+                                              Resume
+                                            </Button>
+                                            <Button
+                                              variant="contained"
+                                              size="small"
+                                              fullWidth
+                                              onClick={() => setSelectedReportText(resDoc.report)}
+                                              sx={{ fontSize: "0.75rem" }}
+                                            >
+                                              Report
+                                            </Button>
+                                          </Box>
+                                        </Box>
+                                      </Grid>
+                                    ))}
+                                  </Grid>
+                                )}
+                              </Paper>
+                            </Grid>
+                          </Grid>
+                        </Box>
+                      </Collapse>
+                    </TableCell>
+                  </TableRow>
+                </React.Fragment>
               );
             })}
           </TableBody>

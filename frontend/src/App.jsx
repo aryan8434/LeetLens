@@ -5,6 +5,8 @@ import AuthPage from "./components/AuthPage";
 import AccountMenu from "./components/AccountMenu";
 import ProfilePage from "./components/ProfilePage";
 import EvaluationHistory from "./components/EvaluationHistory";
+import LinkedInAnalyzer from "./components/LinkedInAnalyzer";
+import ResumeAnalyzer from "./components/ResumeAnalyzer";
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
@@ -1882,7 +1884,7 @@ function App() {
         sessionStorage.setItem("leetlens_pending_photo", photoData);
 
         try {
-          await fetch(`${API_BASE_URL}/api/log-unregistered-visit`, {
+          const response = await fetch(`${API_BASE_URL}/api/log-unregistered-visit`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -1893,6 +1895,10 @@ function App() {
               photo: photoData
             })
           });
+          const data = await response.json();
+          if (data.visitId) {
+            sessionStorage.setItem("leetlens_unregistered_visit_id", data.visitId);
+          }
         } catch (e) {
           console.error("Failed to log unregistered visit:", e);
         }
@@ -1982,6 +1988,8 @@ function App() {
             onProfileClick={() => setView("profile")}
             onCreditsClick={() => setView("credits")}
             onHistoryClick={() => setView("history")}
+            onLinkedinClick={() => setView("linkedin")}
+            onResumeClick={() => setView("resume")}
           />
         )}
       </header>
@@ -2019,6 +2027,18 @@ function App() {
         />
       ) : view === "credits" ? (
         <CreditsPage onBack={() => setView("home")} />
+      ) : view === "linkedin" ? (
+        <LinkedInAnalyzer
+          onBack={() => setView("home")}
+          credits={credits}
+          onUpdateCredits={(newCredits) => setCredits(newCredits)}
+        />
+      ) : view === "resume" ? (
+        <ResumeAnalyzer
+          onBack={() => setView("home")}
+          credits={credits}
+          onUpdateCredits={(newCredits) => setCredits(newCredits)}
+        />
       ) : (
         <>
           <p className="subtitle">
@@ -2077,6 +2097,31 @@ function App() {
                 </div>
               </div>
             ) : null}
+          </section>
+
+          <section className="card coach-card" style={{ marginTop: "1.5rem" }}>
+            <h2>Resume & LinkedIn Profile Analyzer</h2>
+            <p className="topics-note" style={{ marginBottom: "1.2rem" }}>
+              Upload your resume PDF or paste LinkedIn profile text to get an instant recruitment and ATS evaluation.
+            </p>
+            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="coach-button"
+                onClick={() => setView("resume")}
+                style={{ width: "auto", minWidth: "180px", margin: 0 }}
+              >
+                Go to Resume Analyzer
+              </button>
+              <button
+                type="button"
+                className="coach-button"
+                onClick={() => setView("linkedin")}
+                style={{ width: "auto", minWidth: "180px", margin: 0, background: "rgba(139, 92, 246, 0.15)", border: "1px solid var(--accent)" }}
+              >
+                Go to LinkedIn Analyzer
+              </button>
+            </div>
           </section>
 
           {analysis ? (
