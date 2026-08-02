@@ -8,9 +8,11 @@ import {
   Search,
   Shield,
   LayoutDashboard,
+  BarChart3,
   Monitor,
   Smartphone,
   Loader2,
+  PieChart,
 } from "lucide-react";
 import { db } from "./firebase";
 import {
@@ -186,6 +188,16 @@ export default function App() {
   const [unregResumesMap, setUnregResumesMap] = useState({});
   const [userResumes, setUserResumes] = useState([]);
 
+  const totalUnregisteredVisits = unregisteredVisits.length;
+  const unregisteredIpCounts = unregisteredVisits.reduce((counts, visit) => {
+    const ip = (visit.ipAddress || "unknown").toString().trim() || "unknown";
+    counts[ip] = (counts[ip] || 0) + 1;
+    return counts;
+  }, {});
+  const sortedUnregisteredIpCounts = Object.entries(unregisteredIpCounts).sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  );
+
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
@@ -219,7 +231,7 @@ export default function App() {
         );
 
         const unregSnapshot = await getDocs(
-          collection(db, "unregistered_visits")
+          collection(db, "unregistered_visits"),
         );
         const unreg = [];
         unregSnapshot.forEach((doc) => {
@@ -247,7 +259,7 @@ export default function App() {
       if (!unregResumesMap[visitId]) {
         try {
           const resumesSnap = await getDocs(
-            collection(db, "unregistered_visits", visitId, "resumes")
+            collection(db, "unregistered_visits", visitId, "resumes"),
           );
           const list = [];
           resumesSnap.forEach((d) => {
@@ -255,7 +267,10 @@ export default function App() {
           });
           setUnregResumesMap((prev) => ({
             ...prev,
-            [visitId]: list.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)),
+            [visitId]: list.sort(
+              (a, b) =>
+                (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0),
+            ),
           }));
         } catch (e) {
           console.error("Failed to load resumes for unregistered visit:", e);
@@ -276,7 +291,7 @@ export default function App() {
 
     try {
       const searchesSnapshot = await getDocs(
-        collection(db, "registered_users", user.id, "searches")
+        collection(db, "registered_users", user.id, "searches"),
       );
       const s = [];
       searchesSnapshot.forEach((docSnap) => {
@@ -284,11 +299,13 @@ export default function App() {
       });
 
       setUserSearches(
-        s.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
+        s.sort(
+          (a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0),
+        ),
       );
 
       const visitsSnapshot = await getDocs(
-        collection(db, "registered_users", user.id, "visit_history")
+        collection(db, "registered_users", user.id, "visit_history"),
       );
       const v = [];
       visitsSnapshot.forEach((docSnap) => {
@@ -296,22 +313,28 @@ export default function App() {
       });
 
       setUserVisits(
-        v.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
+        v.sort(
+          (a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0),
+        ),
       );
 
       const resumesSnapshot = await getDocs(
-        collection(db, "registered_users", user.id, "resumes")
+        collection(db, "registered_users", user.id, "resumes"),
       );
       const r = [];
       resumesSnapshot.forEach((docSnap) => {
         r.push({ id: docSnap.id, ...docSnap.data() });
       });
       setUserResumes(
-        r.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
+        r.sort(
+          (a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0),
+        ),
       );
     } catch (err) {
       console.error("Failed to load user logs:", err);
-      setErrorMsg("Failed to load user searches and visits history. See console for details.");
+      setErrorMsg(
+        "Failed to load user searches and visits history. See console for details.",
+      );
     } finally {
       setLoadingUserSearches(false);
     }
@@ -398,7 +421,9 @@ export default function App() {
       setRegisteredUsers((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, credits: newCredits } : u)),
       );
-      setSelectedUser((prev) => (prev ? { ...prev, credits: newCredits } : null));
+      setSelectedUser((prev) =>
+        prev ? { ...prev, credits: newCredits } : null,
+      );
       alert("Credits updated successfully!");
     } catch (err) {
       console.error("Failed to update credits:", err);
@@ -409,7 +434,11 @@ export default function App() {
   };
 
   const handleDeleteUserFromDetails = async (userId) => {
-    if (!window.confirm("Are you sure you want to delete this user's records from the database? This action cannot be undone.")) {
+    if (
+      !window.confirm(
+        "Are you sure you want to delete this user's records from the database? This action cannot be undone.",
+      )
+    ) {
       return;
     }
 
@@ -434,7 +463,12 @@ export default function App() {
   const renderOverview = () => (
     <Box>
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" fontWeight={800} letterSpacing="-0.5px" gutterBottom>
+        <Typography
+          variant="h4"
+          fontWeight={800}
+          letterSpacing="-0.5px"
+          gutterBottom
+        >
           Dashboard Overview
         </Typography>
         <Typography color="text.secondary">
@@ -446,8 +480,19 @@ export default function App() {
         <Grid item xs={12} sm={6}>
           <Card>
             <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-                <Typography color="text.secondary" fontWeight={500} variant="subtitle2">
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2,
+                }}
+              >
+                <Typography
+                  color="text.secondary"
+                  fontWeight={500}
+                  variant="subtitle2"
+                >
                   Total Unique Visitors
                 </Typography>
                 <Users size={20} color="#8b5cf6" />
@@ -458,17 +503,54 @@ export default function App() {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={6}>
+        <Grid item xs={12} sm={6} md={4}>
           <Card>
             <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-                <Typography color="text.secondary" fontWeight={500} variant="subtitle2">
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2,
+                }}
+              >
+                <Typography
+                  color="text.secondary"
+                  fontWeight={500}
+                  variant="subtitle2"
+                >
                   Total Searches Processed
                 </Typography>
                 <Activity size={20} color="#06b6d4" />
               </Box>
               <Typography variant="h2" fontWeight={800}>
                 {totalSearches}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={6} md={4}>
+          <Card>
+            <CardContent sx={{ p: 3 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2,
+                }}
+              >
+                <Typography
+                  color="text.secondary"
+                  fontWeight={500}
+                  variant="subtitle2"
+                >
+                  Total Unregistered Visits
+                </Typography>
+                <BarChart3 size={20} color="#f59e0b" />
+              </Box>
+              <Typography variant="h2" fontWeight={800}>
+                {totalUnregisteredVisits}
               </Typography>
             </CardContent>
           </Card>
@@ -483,7 +565,9 @@ export default function App() {
       </Box>
 
       {dailyFolders.length === 0 ? (
-        <Typography color="text.secondary">No daily logs generated yet.</Typography>
+        <Typography color="text.secondary">
+          No daily logs generated yet.
+        </Typography>
       ) : (
         <Grid container spacing={2}>
           {dailyFolders.map((folderName) => (
@@ -501,7 +585,10 @@ export default function App() {
                 }}
                 onClick={() => openFolder(folderName)}
               >
-                <Folder size={36} style={{ color: "#8b5cf6", marginBottom: "8px" }} />
+                <Folder
+                  size={36}
+                  style={{ color: "#8b5cf6", marginBottom: "8px" }}
+                />
                 <Typography variant="subtitle1" fontWeight={700}>
                   {folderName}
                 </Typography>
@@ -523,7 +610,11 @@ export default function App() {
           setActiveTab("overview");
           setErrorMsg(null);
         }}
-        sx={{ mb: 2, color: "text.secondary", "&:hover": { color: "text.primary" } }}
+        sx={{
+          mb: 2,
+          color: "text.secondary",
+          "&:hover": { color: "text.primary" },
+        }}
       >
         Back to Overview
       </Button>
@@ -543,7 +634,14 @@ export default function App() {
       </Box>
 
       {loading ? (
-        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", py: 8 }}>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            py: 8,
+          }}
+        >
           <CircularProgress size={40} thickness={4} />
           <Typography color="text.secondary" sx={{ mt: 2 }}>
             Fetching nested logs...
@@ -564,7 +662,11 @@ export default function App() {
             <TableBody>
               {folderVisitors.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 6, color: "text.secondary" }}>
+                  <TableCell
+                    colSpan={5}
+                    align="center"
+                    sx={{ py: 6, color: "text.secondary" }}
+                  >
                     No visitors logged for this day.
                   </TableCell>
                 </TableRow>
@@ -576,7 +678,13 @@ export default function App() {
                 return (
                   <React.Fragment key={visitor.id}>
                     <TableRow hover>
-                      <TableCell sx={{ fontFamily: "monospace", color: "#8b5cf6", fontWeight: 600 }}>
+                      <TableCell
+                        sx={{
+                          fontFamily: "monospace",
+                          color: "#8b5cf6",
+                          fontWeight: 600,
+                        }}
+                      >
                         {visitor.ip || "Unknown"}
                       </TableCell>
                       <TableCell>
@@ -603,14 +711,20 @@ export default function App() {
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" fontWeight={500} color="text.primary">
+                        <Typography
+                          variant="body2"
+                          fontWeight={500}
+                          color="text.primary"
+                        >
                           {visitor.device?.os}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           {visitor.device?.browser}
                         </Typography>
                       </TableCell>
-                      <TableCell>{dateVal ? dateVal.toLocaleTimeString() : "--"}</TableCell>
+                      <TableCell>
+                        {dateVal ? dateVal.toLocaleTimeString() : "--"}
+                      </TableCell>
                       <TableCell align="right">
                         <Button
                           variant="outlined"
@@ -620,7 +734,9 @@ export default function App() {
                             <ChevronRight
                               size={14}
                               style={{
-                                transform: isExpanded ? "rotate(90deg)" : "none",
+                                transform: isExpanded
+                                  ? "rotate(90deg)"
+                                  : "none",
                                 transition: "transform 0.2s",
                               }}
                             />
@@ -631,14 +747,35 @@ export default function App() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={5}>
+                      <TableCell
+                        style={{ paddingBottom: 0, paddingTop: 0 }}
+                        colSpan={5}
+                      >
                         <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                          <Box sx={{ p: 2, background: "rgba(0, 0, 0, 0.15)", borderRadius: "8px", m: 1.5 }}>
-                            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 700, textTransform: "uppercase" }}>
+                          <Box
+                            sx={{
+                              p: 2,
+                              background: "rgba(0, 0, 0, 0.15)",
+                              borderRadius: "8px",
+                              m: 1.5,
+                            }}
+                          >
+                            <Typography
+                              variant="subtitle2"
+                              color="text.secondary"
+                              sx={{
+                                mb: 1.5,
+                                fontWeight: 700,
+                                textTransform: "uppercase",
+                              }}
+                            >
                               Nested Search Lookups
                             </Typography>
                             {visitor.searchesList?.length === 0 ? (
-                              <Typography variant="body2" color="text.secondary">
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
                                 No searches performed yet.
                               </Typography>
                             ) : (
@@ -652,18 +789,36 @@ export default function App() {
                                         justifyContent: "space-between",
                                         p: 1.5,
                                         background: "#0f172a",
-                                        border: "1px solid rgba(255, 255, 255, 0.05)",
+                                        border:
+                                          "1px solid rgba(255, 255, 255, 0.05)",
                                         borderRadius: "8px",
                                       }}
                                     >
-                                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                                        <Search size={14} style={{ color: "#8b5cf6" }} />
-                                        <Typography variant="body2" fontWeight={600}>
+                                      <Box
+                                        sx={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 1,
+                                        }}
+                                      >
+                                        <Search
+                                          size={14}
+                                          style={{ color: "#8b5cf6" }}
+                                        />
+                                        <Typography
+                                          variant="body2"
+                                          fontWeight={600}
+                                        >
                                           {search.username}
                                         </Typography>
                                       </Box>
-                                      <Typography variant="caption" color="text.secondary">
-                                        {search.timestamp?.toDate()?.toLocaleTimeString()}
+                                      <Typography
+                                        variant="caption"
+                                        color="text.secondary"
+                                      >
+                                        {search.timestamp
+                                          ?.toDate()
+                                          ?.toLocaleTimeString()}
                                       </Typography>
                                     </Box>
                                   </Grid>
@@ -687,10 +842,17 @@ export default function App() {
   const renderRegisteredUsers = () => (
     <Box>
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" fontWeight={800} letterSpacing="-0.5px" gutterBottom>
+        <Typography
+          variant="h4"
+          fontWeight={800}
+          letterSpacing="-0.5px"
+          gutterBottom
+        >
           Registered Users
         </Typography>
-        <Typography color="text.secondary">List of all users signed up on LeetLens.</Typography>
+        <Typography color="text.secondary">
+          List of all users signed up on LeetLens.
+        </Typography>
       </Box>
 
       <TableContainer component={Paper}>
@@ -711,7 +873,11 @@ export default function App() {
           <TableBody>
             {registeredUsers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} align="center" sx={{ py: 6, color: "text.secondary" }}>
+                <TableCell
+                  colSpan={9}
+                  align="center"
+                  sx={{ py: 6, color: "text.secondary" }}
+                >
                   No registered users found.
                 </TableCell>
               </TableRow>
@@ -759,14 +925,22 @@ export default function App() {
                   </TableCell>
                   <TableCell>{user.location || "--"}</TableCell>
                   <TableCell>{user.coordinates || "--"}</TableCell>
-                  <TableCell sx={{ fontFamily: "monospace" }}>{user.ipAddress || "--"}</TableCell>
+                  <TableCell sx={{ fontFamily: "monospace" }}>
+                    {user.ipAddress || "--"}
+                  </TableCell>
                   <TableCell>
                     {dateVal
-                      ? dateVal.toLocaleDateString() + " " + dateVal.toLocaleTimeString()
+                      ? dateVal.toLocaleDateString() +
+                        " " +
+                        dateVal.toLocaleTimeString()
                       : "--"}
                   </TableCell>
                   <TableCell align="right">
-                    <Button variant="outlined" size="small" onClick={() => openUserDetails(user)}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => openUserDetails(user)}
+                    >
                       View Details
                     </Button>
                   </TableCell>
@@ -784,7 +958,7 @@ export default function App() {
 
     const dateVal = selectedUser.createdAt?.toDate();
     const profileSearches = userSearches.filter(
-      (s) => s.type === "analysis" || !s.type
+      (s) => s.type === "analysis" || !s.type,
     );
     const aiReports = userSearches.filter((s) => s.type === "ai_report");
 
@@ -798,7 +972,11 @@ export default function App() {
             setUserSearches([]);
             setErrorMsg(null);
           }}
-          sx={{ mb: 2, color: "text.secondary", "&:hover": { color: "text.primary" } }}
+          sx={{
+            mb: 2,
+            color: "text.secondary",
+            "&:hover": { color: "text.primary" },
+          }}
         >
           Back to Registered Users
         </Button>
@@ -808,7 +986,8 @@ export default function App() {
             User Profile: {selectedUser.name || "Unnamed User"}
           </Typography>
           <Typography color="text.secondary">
-            Manage credits, deletion, and view search/evaluation history for this account.
+            Manage credits, deletion, and view search/evaluation history for
+            this account.
           </Typography>
           {errorMsg && (
             <Typography color="error.light" sx={{ mt: 1 }}>
@@ -820,23 +999,33 @@ export default function App() {
         <Grid container spacing={3}>
           {/* Column 1: Profile Summary */}
           <Grid item xs={12} md={4}>
-            <Card sx={{ p: 3, height: "100%", display: "flex", flexDirection: "column" }}>
+            <Card
+              sx={{
+                p: 3,
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
               <Typography variant="h6" fontWeight={700} sx={{ mb: 3 }}>
                 Profile Summary
               </Typography>
-              {selectedUser.photo && selectedUser.photo.startsWith("data:image") && (
-                <Box sx={{ display: "flex", justifyContent: "center", mb: 3 }}>
-                  <Avatar
-                    src={selectedUser.photo}
-                    sx={{
-                      width: 90,
-                      height: 90,
-                      border: "3px solid #8b5cf6",
-                      boxShadow: "0 8px 16px rgba(0,0,0,0.3)",
-                    }}
-                  />
-                </Box>
-              )}
+              {selectedUser.photo &&
+                selectedUser.photo.startsWith("data:image") && (
+                  <Box
+                    sx={{ display: "flex", justifyContent: "center", mb: 3 }}
+                  >
+                    <Avatar
+                      src={selectedUser.photo}
+                      sx={{
+                        width: 90,
+                        height: 90,
+                        border: "3px solid #8b5cf6",
+                        boxShadow: "0 8px 16px rgba(0,0,0,0.3)",
+                      }}
+                    />
+                  </Box>
+                )}
               <List disablePadding sx={{ flexGrow: 1 }}>
                 {[
                   { label: "Email", val: selectedUser.email, isAcc: true },
@@ -844,20 +1033,41 @@ export default function App() {
                   { label: "Age", val: selectedUser.age || "--" },
                   { label: "DOB", val: selectedUser.dob || "--" },
                   { label: "Location", val: selectedUser.location || "--" },
-                  { label: "Coordinates", val: selectedUser.coordinates || "--" },
+                  {
+                    label: "Coordinates",
+                    val: selectedUser.coordinates || "--",
+                  },
                   { label: "Bio", val: selectedUser.bio || "--", isBio: true },
-                  { label: "Registered IP", val: selectedUser.ipAddress || "--", isCode: true },
+                  {
+                    label: "Registered IP",
+                    val: selectedUser.ipAddress || "--",
+                    isCode: true,
+                  },
                   {
                     label: "Registered At",
                     val: dateVal
-                      ? dateVal.toLocaleDateString() + " " + dateVal.toLocaleTimeString()
+                      ? dateVal.toLocaleDateString() +
+                        " " +
+                        dateVal.toLocaleTimeString()
                       : "--",
                   },
                 ].map((item, idx) => (
                   <React.Fragment key={item.label}>
-                    {idx > 0 && <Divider sx={{ my: 1.5, borderColor: "rgba(255,255,255,0.06)" }} />}
-                    <ListItem disablePadding sx={{ flexDirection: "column", alignItems: "flex-start" }}>
-                      <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ textTransform: "uppercase", mb: 0.5 }}>
+                    {idx > 0 && (
+                      <Divider
+                        sx={{ my: 1.5, borderColor: "rgba(255,255,255,0.06)" }}
+                      />
+                    )}
+                    <ListItem
+                      disablePadding
+                      sx={{ flexDirection: "column", alignItems: "flex-start" }}
+                    >
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        fontWeight={700}
+                        sx={{ textTransform: "uppercase", mb: 0.5 }}
+                      >
                         {item.label}
                       </Typography>
                       <Typography
@@ -881,32 +1091,79 @@ export default function App() {
 
           {/* Column 2: Uploaded Resumes */}
           <Grid item xs={12} md={4}>
-            <Card sx={{ p: 3, height: "100%", display: "flex", flexDirection: "column" }}>
+            <Card
+              sx={{
+                p: 3,
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
               <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
                 Uploaded Resumes
               </Typography>
               {userResumes.length === 0 ? (
-                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", flexGrow: 1 }}>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ fontStyle: "italic", flexGrow: 1 }}
+                >
                   No resumes uploaded yet.
                 </Typography>
               ) : (
-                <List disablePadding sx={{ overflowY: "auto", flexGrow: 1, maxHeight: 450 }}>
+                <List
+                  disablePadding
+                  sx={{ overflowY: "auto", flexGrow: 1, maxHeight: 450 }}
+                >
                   {userResumes.map((resDoc, idx) => (
                     <React.Fragment key={resDoc.id}>
-                      {idx > 0 && <Divider sx={{ my: 1.5, borderColor: "rgba(255,255,255,0.06)" }} />}
-                      <ListItem disablePadding sx={{ flexDirection: "column", alignItems: "flex-start" }}>
-                        <Typography variant="subtitle2" fontWeight={700} color="#8b5cf6" sx={{ width: "100%", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                      {idx > 0 && (
+                        <Divider
+                          sx={{
+                            my: 1.5,
+                            borderColor: "rgba(255,255,255,0.06)",
+                          }}
+                        />
+                      )}
+                      <ListItem
+                        disablePadding
+                        sx={{
+                          flexDirection: "column",
+                          alignItems: "flex-start",
+                        }}
+                      >
+                        <Typography
+                          variant="subtitle2"
+                          fontWeight={700}
+                          color="#8b5cf6"
+                          sx={{
+                            width: "100%",
+                            textOverflow: "ellipsis",
+                            overflow: "hidden",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
                           {resDoc.fileName}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
-                          Uploaded: {resDoc.timestamp?.toDate()?.toLocaleString() || "Unknown"}
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ mb: 1 }}
+                        >
+                          Uploaded:{" "}
+                          {resDoc.timestamp?.toDate()?.toLocaleString() ||
+                            "Unknown"}
                         </Typography>
                         <Box sx={{ display: "flex", gap: 1, width: "100%" }}>
                           <Button
                             variant="outlined"
                             size="small"
                             fullWidth
-                            onClick={() => setSelectedReportText(`RESUME CONTENT:\n\n${resDoc.content}`)}
+                            onClick={() =>
+                              setSelectedReportText(
+                                `RESUME CONTENT:\n\n${resDoc.content}`,
+                              )
+                            }
                             sx={{ fontSize: "0.75rem", py: 0.5 }}
                           >
                             Resume
@@ -931,7 +1188,14 @@ export default function App() {
 
           {/* Column 3: Edit Credits & Danger Zone */}
           <Grid item xs={12} md={4}>
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 3, height: "100%" }}>
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 3,
+                height: "100%",
+              }}
+            >
               <Card sx={{ p: 3, flexGrow: 1 }}>
                 <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
                   Edit Credits
@@ -941,22 +1205,45 @@ export default function App() {
                     type="number"
                     size="small"
                     value={editingCreditsValue}
-                    onChange={(e) => setEditingCreditsValue(Number(e.target.value))}
+                    onChange={(e) =>
+                      setEditingCreditsValue(Number(e.target.value))
+                    }
                     disabled={updateLoading}
                     sx={{ flex: 1 }}
                   />
-                  <Button variant="contained" onClick={() => saveCredits(selectedUser.id)} disabled={updateLoading}>
+                  <Button
+                    variant="contained"
+                    onClick={() => saveCredits(selectedUser.id)}
+                    disabled={updateLoading}
+                  >
                     {updateLoading ? "Saving..." : "Save"}
                   </Button>
                 </Box>
               </Card>
 
-              <Card sx={{ p: 3, borderColor: "rgba(239, 68, 68, 0.3)", "&:hover": { borderColor: "#ef4444" }, flexGrow: 1 }}>
-                <Typography variant="h6" fontWeight={700} color="error.light" sx={{ mb: 1 }}>
+              <Card
+                sx={{
+                  p: 3,
+                  borderColor: "rgba(239, 68, 68, 0.3)",
+                  "&:hover": { borderColor: "#ef4444" },
+                  flexGrow: 1,
+                }}
+              >
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                  color="error.light"
+                  sx={{ mb: 1 }}
+                >
                   Danger Zone
                 </Typography>
-                <Typography variant="body2" color="error.light" sx={{ mb: 2, opacity: 0.85, fontSize: "0.82rem" }}>
-                  This permanently deletes the user's database record, resetting all credits and logs.
+                <Typography
+                  variant="body2"
+                  color="error.light"
+                  sx={{ mb: 2, opacity: 0.85, fontSize: "0.82rem" }}
+                >
+                  This permanently deletes the user's database record, resetting
+                  all credits and logs.
                 </Typography>
                 <Button
                   variant="contained"
@@ -979,24 +1266,46 @@ export default function App() {
               </Typography>
 
               {loadingUserSearches ? (
-                <Box sx={{ display: "flex", alignItems: "center", gap: 2, py: 4 }}>
+                <Box
+                  sx={{ display: "flex", alignItems: "center", gap: 2, py: 4 }}
+                >
                   <CircularProgress size={24} />
-                  <Typography color="text.secondary">Loading activity logs...</Typography>
+                  <Typography color="text.secondary">
+                    Loading activity logs...
+                  </Typography>
                 </Box>
               ) : (
                 <Grid container spacing={3}>
                   {/* Column 1: Profile Searches */}
                   <Grid item xs={12} lg={4}>
-                    <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2, borderBottom: "1px solid rgba(255,255,255,0.08)", pb: 1 }}>
+                    <Typography
+                      variant="subtitle1"
+                      fontWeight={700}
+                      sx={{
+                        mb: 2,
+                        borderBottom: "1px solid rgba(255,255,255,0.08)",
+                        pb: 1,
+                      }}
+                    >
                       Profile Searches ({profileSearches.length})
                     </Typography>
                     <Box sx={{ maxHeight: 400, overflowY: "auto", pr: 1 }}>
                       {profileSearches.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ fontStyle: "italic" }}
+                        >
                           No profile searches logged yet.
                         </Typography>
                       ) : (
-                        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 1.5,
+                          }}
+                        >
                           {profileSearches.map((log) => {
                             const logTime = log.timestamp?.toDate();
                             return (
@@ -1009,16 +1318,34 @@ export default function App() {
                                   borderRadius: "8px",
                                 }}
                               >
-                                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
-                                  <Search size={14} style={{ color: "#8b5cf6" }} />
+                                <Box
+                                  sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 1,
+                                    mb: 1,
+                                  }}
+                                >
+                                  <Search
+                                    size={14}
+                                    style={{ color: "#8b5cf6" }}
+                                  />
                                   <Typography variant="body2" fontWeight={700}>
                                     {log.username}
                                   </Typography>
                                 </Box>
-                                <Typography variant="caption" color="text.secondary" display="block">
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  display="block"
+                                >
                                   {logTime ? logTime.toLocaleString() : "--"}
                                 </Typography>
-                                <Typography variant="caption" sx={{ fontFamily: "monospace", opacity: 0.8 }} color="text.secondary">
+                                <Typography
+                                  variant="caption"
+                                  sx={{ fontFamily: "monospace", opacity: 0.8 }}
+                                  color="text.secondary"
+                                >
                                   {log.ipAddress || "No IP"}
                                 </Typography>
                               </Box>
@@ -1031,16 +1358,34 @@ export default function App() {
 
                   {/* Column 2: AI Reports */}
                   <Grid item xs={12} lg={4}>
-                    <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2, borderBottom: "1px solid rgba(255,255,255,0.08)", pb: 1 }}>
+                    <Typography
+                      variant="subtitle1"
+                      fontWeight={700}
+                      sx={{
+                        mb: 2,
+                        borderBottom: "1px solid rgba(255,255,255,0.08)",
+                        pb: 1,
+                      }}
+                    >
                       AI Reports ({aiReports.length})
                     </Typography>
                     <Box sx={{ maxHeight: 400, overflowY: "auto", pr: 1 }}>
                       {aiReports.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ fontStyle: "italic" }}
+                        >
                           No AI reports generated yet.
                         </Typography>
                       ) : (
-                        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 1.5,
+                          }}
+                        >
                           {aiReports.map((log) => {
                             const logTime = log.timestamp?.toDate();
                             return (
@@ -1053,15 +1398,31 @@ export default function App() {
                                   borderRadius: "8px",
                                 }}
                               >
-                                <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", mb: 1 }}>
-                                  <Activity size={14} style={{ color: "#8b5cf6" }} />
-                                  {log.photo && log.photo.startsWith("data:image") && (
-                                    <Avatar
-                                      src={log.photo}
-                                      variant="rounded"
-                                      sx={{ width: 24, height: 24, border: "1px solid #8b5cf6" }}
-                                    />
-                                  )}
+                                <Box
+                                  sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 1,
+                                    flexWrap: "wrap",
+                                    mb: 1,
+                                  }}
+                                >
+                                  <Activity
+                                    size={14}
+                                    style={{ color: "#8b5cf6" }}
+                                  />
+                                  {log.photo &&
+                                    log.photo.startsWith("data:image") && (
+                                      <Avatar
+                                        src={log.photo}
+                                        variant="rounded"
+                                        sx={{
+                                          width: 24,
+                                          height: 24,
+                                          border: "1px solid #8b5cf6",
+                                        }}
+                                      />
+                                    )}
                                   <Typography variant="body2" fontWeight={700}>
                                     {log.username}
                                   </Typography>
@@ -1070,7 +1431,11 @@ export default function App() {
                                   variant="outlined"
                                   size="small"
                                   fullWidth
-                                  onClick={() => setSelectedReportText(log.report || "No report content.")}
+                                  onClick={() =>
+                                    setSelectedReportText(
+                                      log.report || "No report content.",
+                                    )
+                                  }
                                   sx={{
                                     mt: 1,
                                     mb: 1.5,
@@ -1082,15 +1447,32 @@ export default function App() {
                                 >
                                   View Report
                                 </Button>
-                                <Typography variant="caption" color="text.secondary" display="block">
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  display="block"
+                                >
                                   {logTime ? logTime.toLocaleString() : "--"}
                                 </Typography>
-                                <Typography variant="caption" sx={{ fontFamily: "monospace" }} color="text.secondary" display="block">
+                                <Typography
+                                  variant="caption"
+                                  sx={{ fontFamily: "monospace" }}
+                                  color="text.secondary"
+                                  display="block"
+                                >
                                   {log.ipAddress || "No IP"}
                                 </Typography>
                                 {log.location && (
-                                  <Typography variant="caption" color="primary.main" display="block" sx={{ mt: 0.5 }}>
-                                    {log.location} {log.coordinates ? `(${log.coordinates})` : ""}
+                                  <Typography
+                                    variant="caption"
+                                    color="primary.main"
+                                    display="block"
+                                    sx={{ mt: 0.5 }}
+                                  >
+                                    {log.location}{" "}
+                                    {log.coordinates
+                                      ? `(${log.coordinates})`
+                                      : ""}
                                   </Typography>
                                 )}
                               </Box>
@@ -1103,16 +1485,34 @@ export default function App() {
 
                   {/* Column 3: Visited Photos History */}
                   <Grid item xs={12} lg={4}>
-                    <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2, borderBottom: "1px solid rgba(255,255,255,0.08)", pb: 1 }}>
+                    <Typography
+                      variant="subtitle1"
+                      fontWeight={700}
+                      sx={{
+                        mb: 2,
+                        borderBottom: "1px solid rgba(255,255,255,0.08)",
+                        pb: 1,
+                      }}
+                    >
                       Photos History ({userVisits.length})
                     </Typography>
                     <Box sx={{ maxHeight: 400, overflowY: "auto", pr: 1 }}>
                       {userVisits.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ fontStyle: "italic" }}
+                        >
                           No visit photos captured yet.
                         </Typography>
                       ) : (
-                        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 1.5,
+                          }}
+                        >
                           {userVisits.map((visit) => {
                             const visitTime = visit.timestamp?.toDate();
                             return (
@@ -1125,8 +1525,16 @@ export default function App() {
                                   borderRadius: "8px",
                                 }}
                               >
-                                <Box sx={{ display: "flex", gap: 1.5, alignItems: "center", mb: 1 }}>
-                                  {visit.photo && visit.photo.startsWith("data:image") ? (
+                                <Box
+                                  sx={{
+                                    display: "flex",
+                                    gap: 1.5,
+                                    alignItems: "center",
+                                    mb: 1,
+                                  }}
+                                >
+                                  {visit.photo &&
+                                  visit.photo.startsWith("data:image") ? (
                                     <Avatar
                                       src={visit.photo}
                                       variant="rounded"
@@ -1137,22 +1545,45 @@ export default function App() {
                                         cursor: "pointer",
                                         "&:hover": { opacity: 0.8 },
                                       }}
-                                      onClick={() => setSelectedReportText(visit.photo)}
+                                      onClick={() =>
+                                        setSelectedReportText(visit.photo)
+                                      }
                                     />
                                   ) : (
-                                    <Avatar variant="rounded" sx={{ width: 48, height: 48 }}>No</Avatar>
+                                    <Avatar
+                                      variant="rounded"
+                                      sx={{ width: 48, height: 48 }}
+                                    >
+                                      No
+                                    </Avatar>
                                   )}
                                   <Box>
-                                    <Typography variant="caption" color="text.secondary" display="block">
-                                      {visitTime ? visitTime.toLocaleString() : "--"}
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                      display="block"
+                                    >
+                                      {visitTime
+                                        ? visitTime.toLocaleString()
+                                        : "--"}
                                     </Typography>
-                                    <Typography variant="body2" fontWeight={600}>
+                                    <Typography
+                                      variant="body2"
+                                      fontWeight={600}
+                                    >
                                       {visit.location || "Unknown Location"}
                                     </Typography>
                                   </Box>
                                 </Box>
                                 {visit.coordinates && (
-                                  <Typography variant="caption" sx={{ fontFamily: "monospace", display: "block" }} color="primary.main">
+                                  <Typography
+                                    variant="caption"
+                                    sx={{
+                                      fontFamily: "monospace",
+                                      display: "block",
+                                    }}
+                                    color="primary.main"
+                                  >
                                     Coords: {visit.coordinates}
                                   </Typography>
                                 )}
@@ -1175,11 +1606,17 @@ export default function App() {
   const renderUnregisteredUsers = () => (
     <Box>
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" fontWeight={800} letterSpacing="-0.5px" gutterBottom>
+        <Typography
+          variant="h4"
+          fontWeight={800}
+          letterSpacing="-0.5px"
+          gutterBottom
+        >
           Unregistered User Visits
         </Typography>
         <Typography color="text.secondary">
-          Location, coordinates, and photo logs snapped from unregistered/unsigned visitors.
+          Location, coordinates, and photo logs snapped from
+          unregistered/unsigned visitors.
         </Typography>
       </Box>
 
@@ -1200,7 +1637,11 @@ export default function App() {
           <TableBody>
             {unregisteredVisits.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 6, color: "text.secondary" }}>
+                <TableCell
+                  colSpan={8}
+                  align="center"
+                  sx={{ py: 6, color: "text.secondary" }}
+                >
                   No unregistered user visits logged yet.
                 </TableCell>
               </TableRow>
@@ -1228,7 +1669,13 @@ export default function App() {
                         <Avatar sx={{ width: 36, height: 36 }}>--</Avatar>
                       )}
                     </TableCell>
-                    <TableCell sx={{ color: "#8b5cf6", fontWeight: 600, fontFamily: "monospace" }}>
+                    <TableCell
+                      sx={{
+                        color: "#8b5cf6",
+                        fontWeight: 600,
+                        fontFamily: "monospace",
+                      }}
+                    >
                       {visit.ipAddress || "--"}
                     </TableCell>
                     <TableCell>
@@ -1251,11 +1698,16 @@ export default function App() {
                         ) : (
                           <Monitor size={12} style={{ marginRight: 6 }} />
                         )}
-                        {visit.device?.vendor || "Generic"} {visit.device?.model || "Device"}
+                        {visit.device?.vendor || "Generic"}{" "}
+                        {visit.device?.model || "Device"}
                       </Box>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" fontWeight={500} color="text.primary">
+                      <Typography
+                        variant="body2"
+                        fontWeight={500}
+                        color="text.primary"
+                      >
                         {visit.device?.os || "Unknown"}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
@@ -1263,10 +1715,14 @@ export default function App() {
                       </Typography>
                     </TableCell>
                     <TableCell>{visit.location || "--"}</TableCell>
-                    <TableCell sx={{ fontFamily: "monospace" }}>{visit.coordinates || "--"}</TableCell>
+                    <TableCell sx={{ fontFamily: "monospace" }}>
+                      {visit.coordinates || "--"}
+                    </TableCell>
                     <TableCell>
                       {dateVal
-                        ? dateVal.toLocaleDateString() + " " + dateVal.toLocaleTimeString()
+                        ? dateVal.toLocaleDateString() +
+                          " " +
+                          dateVal.toLocaleTimeString()
                         : "--"}
                     </TableCell>
                     <TableCell align="right">
@@ -1278,7 +1734,9 @@ export default function App() {
                           <ChevronRight
                             size={14}
                             style={{
-                              transform: expandedUnregRows.has(visit.id) ? "rotate(90deg)" : "none",
+                              transform: expandedUnregRows.has(visit.id)
+                                ? "rotate(90deg)"
+                                : "none",
                               transition: "transform 0.2s",
                             }}
                           />
@@ -1289,49 +1747,147 @@ export default function App() {
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={8}>
-                      <Collapse in={expandedUnregRows.has(visit.id)} timeout="auto" unmountOnExit>
-                        <Box sx={{ p: 2, background: "rgba(0, 0, 0, 0.15)", borderRadius: "8px", m: 1.5 }}>
+                    <TableCell
+                      style={{ paddingBottom: 0, paddingTop: 0 }}
+                      colSpan={8}
+                    >
+                      <Collapse
+                        in={expandedUnregRows.has(visit.id)}
+                        timeout="auto"
+                        unmountOnExit
+                      >
+                        <Box
+                          sx={{
+                            p: 2,
+                            background: "rgba(0, 0, 0, 0.15)",
+                            borderRadius: "8px",
+                            m: 1.5,
+                          }}
+                        >
                           <Grid container spacing={2}>
                             {/* Column 1: Visit Summary */}
                             <Grid item xs={12} md={4}>
-                              <Paper sx={{ p: 2.5, background: "#0f172a", border: "1px solid rgba(255, 255, 255, 0.05)", borderRadius: "8px", height: "100%" }}>
-                                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2, fontWeight: 700, textTransform: "uppercase" }}>
+                              <Paper
+                                sx={{
+                                  p: 2.5,
+                                  background: "#0f172a",
+                                  border: "1px solid rgba(255, 255, 255, 0.05)",
+                                  borderRadius: "8px",
+                                  height: "100%",
+                                }}
+                              >
+                                <Typography
+                                  variant="subtitle2"
+                                  color="text.secondary"
+                                  sx={{
+                                    mb: 2,
+                                    fontWeight: 700,
+                                    textTransform: "uppercase",
+                                  }}
+                                >
                                   Visit Session Info
                                 </Typography>
-                                {visit.photo && visit.photo.startsWith("data:image") && (
-                                  <Box sx={{ display: "flex", justifyContent: "center", mb: 2 }}>
-                                    <Avatar
-                                      src={visit.photo}
-                                      variant="rounded"
+                                {visit.photo &&
+                                  visit.photo.startsWith("data:image") && (
+                                    <Box
                                       sx={{
-                                        width: 80,
-                                        height: 80,
-                                        border: "1.5px solid #8b5cf6",
-                                        cursor: "pointer",
-                                        "&:hover": { opacity: 0.8 },
+                                        display: "flex",
+                                        justifyContent: "center",
+                                        mb: 2,
                                       }}
-                                      onClick={() => setSelectedReportText(visit.photo)}
-                                    />
-                                  </Box>
-                                )}
+                                    >
+                                      <Avatar
+                                        src={visit.photo}
+                                        variant="rounded"
+                                        sx={{
+                                          width: 80,
+                                          height: 80,
+                                          border: "1.5px solid #8b5cf6",
+                                          cursor: "pointer",
+                                          "&:hover": { opacity: 0.8 },
+                                        }}
+                                        onClick={() =>
+                                          setSelectedReportText(visit.photo)
+                                        }
+                                      />
+                                    </Box>
+                                  )}
                                 <List disablePadding>
                                   {[
-                                    { label: "IP Address", val: visit.ipAddress || "--", isCode: true },
-                                    { label: "Location", val: visit.location || "--" },
-                                    { label: "Coordinates", val: visit.coordinates || "--" },
-                                    { label: "Device Type", val: visit.device?.type || "--" },
-                                    { label: "Device Info", val: `${visit.device?.vendor || ""} ${visit.device?.model || ""}`.trim() || "--" },
-                                    { label: "OS & Browser", val: `${visit.device?.os || ""} - ${visit.device?.browser || ""}`.trim() || "--" },
-                                    { label: "Visited At", val: visit.timestamp?.toDate()?.toLocaleString() || "--" },
+                                    {
+                                      label: "IP Address",
+                                      val: visit.ipAddress || "--",
+                                      isCode: true,
+                                    },
+                                    {
+                                      label: "Location",
+                                      val: visit.location || "--",
+                                    },
+                                    {
+                                      label: "Coordinates",
+                                      val: visit.coordinates || "--",
+                                    },
+                                    {
+                                      label: "Device Type",
+                                      val: visit.device?.type || "--",
+                                    },
+                                    {
+                                      label: "Device Info",
+                                      val:
+                                        `${visit.device?.vendor || ""} ${visit.device?.model || ""}`.trim() ||
+                                        "--",
+                                    },
+                                    {
+                                      label: "OS & Browser",
+                                      val:
+                                        `${visit.device?.os || ""} - ${visit.device?.browser || ""}`.trim() ||
+                                        "--",
+                                    },
+                                    {
+                                      label: "Visited At",
+                                      val:
+                                        visit.timestamp
+                                          ?.toDate()
+                                          ?.toLocaleString() || "--",
+                                    },
                                   ].map((item, idx) => (
                                     <React.Fragment key={item.label}>
-                                      {idx > 0 && <Divider sx={{ my: 1, borderColor: "rgba(255,255,255,0.06)" }} />}
-                                      <ListItem disablePadding sx={{ flexDirection: "column", alignItems: "flex-start" }}>
-                                        <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ textTransform: "uppercase", fontSize: "0.7rem", mb: 0.5 }}>
+                                      {idx > 0 && (
+                                        <Divider
+                                          sx={{
+                                            my: 1,
+                                            borderColor:
+                                              "rgba(255,255,255,0.06)",
+                                          }}
+                                        />
+                                      )}
+                                      <ListItem
+                                        disablePadding
+                                        sx={{
+                                          flexDirection: "column",
+                                          alignItems: "flex-start",
+                                        }}
+                                      >
+                                        <Typography
+                                          variant="caption"
+                                          color="text.secondary"
+                                          fontWeight={700}
+                                          sx={{
+                                            textTransform: "uppercase",
+                                            fontSize: "0.7rem",
+                                            mb: 0.5,
+                                          }}
+                                        >
                                           {item.label}
                                         </Typography>
-                                        <Typography variant="body2" sx={{ fontFamily: item.isCode ? "monospace" : "inherit" }}>
+                                        <Typography
+                                          variant="body2"
+                                          sx={{
+                                            fontFamily: item.isCode
+                                              ? "monospace"
+                                              : "inherit",
+                                          }}
+                                        >
                                           {item.val}
                                         </Typography>
                                       </ListItem>
@@ -1343,36 +1899,99 @@ export default function App() {
 
                             {/* Column 2: Uploaded Resumes */}
                             <Grid item xs={12} md={8}>
-                              <Paper sx={{ p: 2.5, background: "#0f172a", border: "1px solid rgba(255, 255, 255, 0.05)", borderRadius: "8px", height: "100%" }}>
-                                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2, fontWeight: 700, textTransform: "uppercase" }}>
+                              <Paper
+                                sx={{
+                                  p: 2.5,
+                                  background: "#0f172a",
+                                  border: "1px solid rgba(255, 255, 255, 0.05)",
+                                  borderRadius: "8px",
+                                  height: "100%",
+                                }}
+                              >
+                                <Typography
+                                  variant="subtitle2"
+                                  color="text.secondary"
+                                  sx={{
+                                    mb: 2,
+                                    fontWeight: 700,
+                                    textTransform: "uppercase",
+                                  }}
+                                >
                                   Uploaded Resumes & Reports
                                 </Typography>
                                 {!unregResumesMap[visit.id] ? (
-                                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 2 }}>
+                                  <Box
+                                    sx={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 1,
+                                      py: 2,
+                                    }}
+                                  >
                                     <CircularProgress size={16} />
-                                    <Typography variant="body2" color="text.secondary">Loading resumes...</Typography>
+                                    <Typography
+                                      variant="body2"
+                                      color="text.secondary"
+                                    >
+                                      Loading resumes...
+                                    </Typography>
                                   </Box>
                                 ) : unregResumesMap[visit.id].length === 0 ? (
-                                  <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", py: 1 }}>
-                                    No resumes uploaded by this unregistered visitor.
+                                  <Typography
+                                    variant="body2"
+                                    color="text.secondary"
+                                    sx={{ fontStyle: "italic", py: 1 }}
+                                  >
+                                    No resumes uploaded by this unregistered
+                                    visitor.
                                   </Typography>
                                 ) : (
                                   <Grid container spacing={2}>
                                     {unregResumesMap[visit.id].map((resDoc) => (
                                       <Grid item xs={12} sm={6} key={resDoc.id}>
-                                        <Box sx={{ p: 2, background: "rgba(30, 41, 59, 0.4)", border: "1px solid rgba(255, 255, 255, 0.05)", borderRadius: "8px" }}>
-                                          <Typography variant="subtitle2" fontWeight={700} sx={{ color: "#8b5cf6", mb: 0.5, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                                        <Box
+                                          sx={{
+                                            p: 2,
+                                            background: "rgba(30, 41, 59, 0.4)",
+                                            border:
+                                              "1px solid rgba(255, 255, 255, 0.05)",
+                                            borderRadius: "8px",
+                                          }}
+                                        >
+                                          <Typography
+                                            variant="subtitle2"
+                                            fontWeight={700}
+                                            sx={{
+                                              color: "#8b5cf6",
+                                              mb: 0.5,
+                                              textOverflow: "ellipsis",
+                                              overflow: "hidden",
+                                              whiteSpace: "nowrap",
+                                            }}
+                                          >
                                             {resDoc.fileName}
                                           </Typography>
-                                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-                                            Uploaded: {resDoc.timestamp?.toDate()?.toLocaleString() || "Unknown"}
+                                          <Typography
+                                            variant="caption"
+                                            color="text.secondary"
+                                            display="block"
+                                            sx={{ mb: 1.5 }}
+                                          >
+                                            Uploaded:{" "}
+                                            {resDoc.timestamp
+                                              ?.toDate()
+                                              ?.toLocaleString() || "Unknown"}
                                           </Typography>
                                           <Box sx={{ display: "flex", gap: 1 }}>
                                             <Button
                                               variant="outlined"
                                               size="small"
                                               fullWidth
-                                              onClick={() => setSelectedReportText(`RESUME CONTENT:\n\n${resDoc.content}`)}
+                                              onClick={() =>
+                                                setSelectedReportText(
+                                                  `RESUME CONTENT:\n\n${resDoc.content}`,
+                                                )
+                                              }
                                               sx={{ fontSize: "0.75rem" }}
                                             >
                                               Resume
@@ -1381,7 +2000,11 @@ export default function App() {
                                               variant="contained"
                                               size="small"
                                               fullWidth
-                                              onClick={() => setSelectedReportText(resDoc.report)}
+                                              onClick={() =>
+                                                setSelectedReportText(
+                                                  resDoc.report,
+                                                )
+                                              }
                                               sx={{ fontSize: "0.75rem" }}
                                             >
                                               Report
@@ -1408,6 +2031,388 @@ export default function App() {
     </Box>
   );
 
+  const renderUnregisteredStats = () => (
+    <Box>
+      <Box sx={{ mb: 4 }}>
+        <Typography
+          variant="h4"
+          fontWeight={800}
+          letterSpacing="-0.5px"
+          gutterBottom
+        >
+          Unregistered Visit Stats
+        </Typography>
+        <Typography color="text.secondary">
+          Counts every unregistered visit record, even when the same IP appears
+          many times.
+        </Typography>
+      </Box>
+
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} sm={6}>
+          <Card>
+            <CardContent sx={{ p: 3 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2,
+                }}
+              >
+                <Typography
+                  color="text.secondary"
+                  fontWeight={500}
+                  variant="subtitle2"
+                >
+                  Total Visit Records
+                </Typography>
+                <BarChart3 size={20} color="#f59e0b" />
+              </Box>
+              <Typography variant="h2" fontWeight={800}>
+                {totalUnregisteredVisits}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={6}>
+          <Card>
+            <CardContent sx={{ p: 3 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2,
+                }}
+              >
+                <Typography
+                  color="text.secondary"
+                  fontWeight={500}
+                  variant="subtitle2"
+                >
+                  Unique IP Addresses
+                </Typography>
+                <Users size={20} color="#06b6d4" />
+              </Box>
+              <Typography variant="h2" fontWeight={800}>
+                {sortedUnregisteredIpCounts.length}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>IP Address</TableCell>
+              <TableCell align="right">Visit Count</TableCell>
+              <TableCell align="right">Share</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {sortedUnregisteredIpCounts.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={3}
+                  align="center"
+                  sx={{ py: 6, color: "text.secondary" }}
+                >
+                  No unregistered visit records found.
+                </TableCell>
+              </TableRow>
+            ) : (
+              sortedUnregisteredIpCounts.map(([ip, count]) => {
+                const share = totalUnregisteredVisits
+                  ? ((count / totalUnregisteredVisits) * 100).toFixed(1)
+                  : "0.0";
+
+                return (
+                  <TableRow key={ip} hover>
+                    <TableCell
+                      sx={{
+                        color: "#8b5cf6",
+                        fontWeight: 600,
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      {ip}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>
+                      {count}
+                    </TableCell>
+                    <TableCell align="right" sx={{ color: "text.secondary" }}>
+                      {share}%
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Box>
+  );
+
+  const renderOSPercentage = () => {
+    const OS_COLORS = {
+      Windows: "#0078d4",
+      Android: "#3ddc84",
+      macOS: "#a3a3a3",
+      iOS: "#ff2d55",
+      Linux: "#f29111",
+      Ubuntu: "#e95420",
+      Unknown: "#64748b",
+    };
+
+    const getOsColor = (os) => {
+      const matched = Object.keys(OS_COLORS).find((key) =>
+        os.toLowerCase().includes(key.toLowerCase())
+      );
+      return matched ? OS_COLORS[matched] : "#8b5cf6";
+    };
+
+    const unregisteredOsCounts = unregisteredVisits.reduce((counts, visit) => {
+      const os = visit.device?.os || "Unknown";
+      counts[os] = (counts[os] || 0) + 1;
+      return counts;
+    }, {});
+
+    const sortedUnregisteredOsCounts = Object.entries(unregisteredOsCounts).sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0])
+    );
+
+    const total = unregisteredVisits.length;
+
+    const renderPieChart = () => {
+      if (total === 0) {
+        return (
+          <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: 240 }}>
+            <Typography color="text.secondary">No OS data available</Typography>
+          </Box>
+        );
+      }
+
+      let accumulatedAngle = 0;
+      return (
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: "center",
+            justifyContent: "space-around",
+            gap: 4,
+            py: 3,
+          }}
+        >
+          {/* SVG Pie/Donut Chart */}
+          <Box sx={{ position: "relative", width: 220, height: 220 }}>
+            <svg width="100%" height="100%" viewBox="0 0 100 100" style={{ transform: "rotate(-90deg)" }}>
+              {sortedUnregisteredOsCounts.map(([os, count]) => {
+                const percentage = (count / total) * 100;
+                const angle = (count / total) * 360;
+                const color = getOsColor(os);
+                
+                const x1 = 50 + 40 * Math.cos((accumulatedAngle * Math.PI) / 180);
+                const y1 = 50 + 40 * Math.sin((accumulatedAngle * Math.PI) / 180);
+                
+                accumulatedAngle += angle;
+                
+                const x2 = 50 + 40 * Math.cos((accumulatedAngle * Math.PI) / 180);
+                const y2 = 50 + 40 * Math.sin((accumulatedAngle * Math.PI) / 180);
+                
+                const largeArcFlag = angle > 180 ? 1 : 0;
+                
+                const pathData = `
+                  M 50 50
+                  L ${x1} ${y1}
+                  A 40 40 0 ${largeArcFlag} 1 ${x2} ${y2}
+                  Z
+                `;
+                
+                return (
+                  <path
+                    key={os}
+                    d={pathData}
+                    fill={color}
+                    stroke="#0f172a"
+                    strokeWidth="1.5"
+                    style={{
+                      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.transform = "scale(1.05)";
+                      e.target.style.transformOrigin = "50% 50%";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.transform = "none";
+                    }}
+                  />
+                );
+              })}
+              <circle cx="50" cy="50" r="24" fill="#0f172a" />
+            </svg>
+            <Box
+              sx={{
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%, -50%)",
+                textAlign: "center",
+                pointerEvents: "none",
+              }}
+            >
+              <Typography variant="h5" fontWeight={800} color="text.primary">
+                {total}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Visits
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Legend Grid */}
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, minWidth: 200 }}>
+            {sortedUnregisteredOsCounts.map(([os, count]) => {
+              const percentage = ((count / total) * 100).toFixed(1);
+              const color = getOsColor(os);
+              return (
+                <Box key={os} sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                  <Box
+                    sx={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: "4px",
+                      background: color,
+                      boxShadow: `0 0 10px ${color}66`,
+                    }}
+                  />
+                  <Box sx={{ display: "flex", justifyContent: "space-between", flexGrow: 1, gap: 3 }}>
+                    <Typography variant="body2" fontWeight={600} color="text.primary">
+                      {os}
+                    </Typography>
+                    <Typography variant="body2" fontWeight={700} color="text.secondary">
+                      {percentage}%
+                    </Typography>
+                  </Box>
+                </Box>
+              );
+            })}
+          </Box>
+        </Box>
+      );
+    };
+
+    return (
+      <Box>
+        <Box sx={{ mb: 4 }}>
+          <Typography
+            variant="h4"
+            fontWeight={800}
+            letterSpacing="-0.5px"
+            gutterBottom
+          >
+            OS Percentage Breakdown
+          </Typography>
+          <Typography color="text.secondary">
+            Analysis of Operating Systems used by unregistered visitors.
+          </Typography>
+        </Box>
+
+        <Card sx={{ mb: 4, p: 2 }}>
+          <CardContent>
+            <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
+              OS Distribution Chart
+            </Typography>
+            {renderPieChart()}
+          </CardContent>
+        </Card>
+
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Operating System</TableCell>
+                <TableCell align="right">Visit Count</TableCell>
+                <TableCell align="right">Percentage Share</TableCell>
+                <TableCell align="right">Visual Share</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {sortedUnregisteredOsCounts.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={4}
+                    align="center"
+                    sx={{ py: 6, color: "text.secondary" }}
+                  >
+                    No unregistered visit records found.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                sortedUnregisteredOsCounts.map(([os, count]) => {
+                  const share = total
+                    ? ((count / total) * 100).toFixed(1)
+                    : "0.0";
+                  const color = getOsColor(os);
+
+                  return (
+                    <TableRow key={os} hover>
+                      <TableCell sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: color,
+                          }}
+                        />
+                        <Typography fontWeight={600}>{os}</Typography>
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>
+                        {count}
+                      </TableCell>
+                      <TableCell align="right" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                        {share}%
+                      </TableCell>
+                      <TableCell align="right" sx={{ width: "30%" }}>
+                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1 }}>
+                          <Box
+                            sx={{
+                              width: "100%",
+                              maxWidth: 120,
+                              height: 6,
+                              borderRadius: 3,
+                              background: "rgba(255, 255, 255, 0.05)",
+                              overflow: "hidden",
+                            }}
+                          >
+                            <Box
+                              sx={{
+                                width: `${share}%`,
+                                height: "100%",
+                                borderRadius: 3,
+                                background: color,
+                                boxShadow: `0 0 8px ${color}`,
+                              }}
+                            />
+                          </Box>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Box>
+    );
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -1432,7 +2437,13 @@ export default function App() {
           }}
         >
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, px: 1 }}>
-            <Shield size={24} style={{ color: "#8b5cf6", filter: "drop-shadow(0 0 8px rgba(139, 92, 246, 0.5))" }} />
+            <Shield
+              size={24}
+              style={{
+                color: "#8b5cf6",
+                filter: "drop-shadow(0 0 8px rgba(139, 92, 246, 0.5))",
+              }}
+            />
             <Typography variant="h6" fontWeight={800} letterSpacing="-0.5px">
               LeetLens Admin
             </Typography>
@@ -1440,11 +2451,34 @@ export default function App() {
 
           <List sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
             {[
-              { id: "overview", label: "Overview", icon: <LayoutDashboard size={18} /> },
-              { id: "users", label: "Registered Users", icon: <Users size={18} /> },
-              { id: "unregistered", label: "Unregistered Users", icon: <Smartphone size={18} /> },
+              {
+                id: "overview",
+                label: "Overview",
+                icon: <LayoutDashboard size={18} />,
+              },
+              {
+                id: "users",
+                label: "Registered Users",
+                icon: <Users size={18} />,
+              },
+              {
+                id: "unregistered",
+                label: "Unregistered Users",
+                icon: <Smartphone size={18} />,
+              },
+              {
+                id: "unregistered-os",
+                label: "OS Percentage",
+                icon: <PieChart size={18} />,
+              },
+              {
+                id: "unregistered-stats",
+                label: "Unregistered Stats",
+                icon: <BarChart3 size={18} />,
+              },
             ].map((tab) => {
-              const isTabActive = !selectedFolder && !selectedUser && activeTab === tab.id;
+              const isTabActive =
+                !selectedFolder && !selectedUser && activeTab === tab.id;
               return (
                 <ListItem key={tab.id} disablePadding>
                   <ListItemButton
@@ -1458,16 +2492,30 @@ export default function App() {
                       borderRadius: "8px",
                       py: 1.5,
                       color: isTabActive ? "#ffffff" : "text.secondary",
-                      background: isTabActive ? "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important" : "transparent",
-                      boxShadow: isTabActive ? "0 4px 15px rgba(139, 92, 246, 0.4)" : "none",
+                      background: isTabActive
+                        ? "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important"
+                        : "transparent",
+                      boxShadow: isTabActive
+                        ? "0 4px 15px rgba(139, 92, 246, 0.4)"
+                        : "none",
                       "&:hover": {
-                        background: isTabActive ? "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)" : "rgba(255,255,255,0.05)",
+                        background: isTabActive
+                          ? "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)"
+                          : "rgba(255,255,255,0.05)",
                         color: isTabActive ? "#ffffff" : "text.primary",
                       },
                     }}
                   >
-                    <ListItemIcon sx={{ color: "inherit", minWidth: 36 }}>{tab.icon}</ListItemIcon>
-                    <ListItemText primary={tab.label} primaryTypographyProps={{ fontWeight: 600, fontSize: "0.92rem" }} />
+                    <ListItemIcon sx={{ color: "inherit", minWidth: 36 }}>
+                      {tab.icon}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={tab.label}
+                      primaryTypographyProps={{
+                        fontWeight: 600,
+                        fontSize: "0.92rem",
+                      }}
+                    />
                   </ListItemButton>
                 </ListItem>
               );
@@ -1481,13 +2529,20 @@ export default function App() {
                     borderRadius: "8px",
                     py: 1.5,
                     color: "#ffffff",
-                    background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important",
+                    background:
+                      "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important",
                   }}
                 >
                   <ListItemIcon sx={{ color: "inherit", minWidth: 36 }}>
                     <Folder size={18} />
                   </ListItemIcon>
-                  <ListItemText primary="Day Details" primaryTypographyProps={{ fontWeight: 600, fontSize: "0.92rem" }} />
+                  <ListItemText
+                    primary="Day Details"
+                    primaryTypographyProps={{
+                      fontWeight: 600,
+                      fontSize: "0.92rem",
+                    }}
+                  />
                 </ListItemButton>
               </ListItem>
             )}
@@ -1495,16 +2550,23 @@ export default function App() {
         </Box>
 
         {/* Main Content Pane */}
-        <Box component="main" sx={{ flexGrow: 1, p: 5, maxWidth: 1280, mx: "auto" }}>
+        <Box
+          component="main"
+          sx={{ flexGrow: 1, p: 5, maxWidth: 1280, mx: "auto" }}
+        >
           {selectedUser
             ? renderUserDetails()
             : activeTab === "unregistered"
               ? renderUnregisteredUsers()
-              : activeTab === "users"
-                ? renderRegisteredUsers()
-                : !selectedFolder
-                  ? renderOverview()
-                  : renderFolderDetails()}
+              : activeTab === "unregistered-os"
+                ? renderOSPercentage()
+                : activeTab === "unregistered-stats"
+                  ? renderUnregisteredStats()
+                  : activeTab === "users"
+                    ? renderRegisteredUsers()
+                    : !selectedFolder
+                      ? renderOverview()
+                      : renderFolderDetails()}
         </Box>
       </Box>
 
@@ -1515,9 +2577,19 @@ export default function App() {
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.08)", pb: 2 }}>
+        <DialogTitle
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            pb: 2,
+          }}
+        >
           <Typography variant="h6" fontWeight={700} color="#8b5cf6">
-            {selectedReportText?.startsWith("data:image") ? "Snapped Photo Details" : "Generated AI Report"}
+            {selectedReportText?.startsWith("data:image")
+              ? "Snapped Photo Details"
+              : "Generated AI Report"}
           </Typography>
         </DialogTitle>
         <DialogContent sx={{ mt: 2, textAlign: "center" }}>
@@ -1556,8 +2628,13 @@ export default function App() {
             </Box>
           )}
         </DialogContent>
-        <DialogActions sx={{ borderTop: "1px solid rgba(255,255,255,0.08)", p: 2 }}>
-          <Button onClick={() => setSelectedReportText(null)} variant="outlined">
+        <DialogActions
+          sx={{ borderTop: "1px solid rgba(255,255,255,0.08)", p: 2 }}
+        >
+          <Button
+            onClick={() => setSelectedReportText(null)}
+            variant="outlined"
+          >
             Close
           </Button>
         </DialogActions>

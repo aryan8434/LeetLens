@@ -68,9 +68,11 @@ export function evaluateExperience(text) {
 function extractScore(reportText) {
   if (!reportText) return null;
   const patterns = [
+    /(?:ATS|Match|Overall)?\s*Score\s*:\s*(\d+)\s*\/\s*100/i,
     /(?:ATS|Match|Overall)?\s*Score\s*:\s*(\d+)\s*%/i,
     /(\d+)\s*%\s*(?:Match|ATS|Overall)?\s*Score/i,
-    /(?:ATS|Match|Overall)?\s*Score\s*:\s*(\d+)\s*\/100/i,
+    /(\d+)\s*\/\s*100\s*(?:Match|ATS|Overall)?\s*Score/i,
+    /\b(\d+)\s*\/\s*100\b/,
     /\b(\d+)\s*%\b/
   ];
   for (const pattern of patterns) {
@@ -83,26 +85,31 @@ function extractScore(reportText) {
   return null;
 }
 
-// Helper to parse simple bold markdown **text**
+// Helper to parse simple bold markdown **text** or *text*
 function parseInlineMarkdown(text) {
+  let clean = (text || "").toString();
+  // Fix mismatched asterisks like *Executive Summary**
+  if (clean.startsWith("*") && !clean.startsWith("**") && clean.endsWith("**")) {
+    clean = "*" + clean;
+  }
   const parts = [];
-  const regex = /\*\*(.*?)\*\*/g;
+  const regex = /(?:\*\*|__|\*)([^*_]+)(?:\*\*|__|\*)/g;
   let lastIndex = 0;
   let match;
 
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = regex.exec(clean)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(text.substring(lastIndex, match.index));
+      parts.push(clean.substring(lastIndex, match.index));
     }
-    parts.push(<strong key={match.index} style={{ color: "white" }}>{match[1]}</strong>);
+    parts.push(<strong key={match.index} style={{ color: "white", fontWeight: "800", background: "rgba(255,255,255,0.05)", padding: "1px 4px", borderRadius: "4px" }}>{match[1].trim()}</strong>);
     lastIndex = regex.lastIndex;
   }
 
-  if (lastIndex < text.length) {
-    parts.push(text.substring(lastIndex));
+  if (lastIndex < clean.length) {
+    parts.push(clean.substring(lastIndex));
   }
 
-  return parts.length > 0 ? parts : text;
+  return parts.length > 0 ? parts : clean;
 }
 
 // A line-by-line Markdown renderer to fix rendering issues
@@ -128,8 +135,12 @@ export function renderMarkdown(text) {
       continue;
     }
 
-    // Check for headings
-    if (line.startsWith("#")) {
+    // Check for headings or section titles formatted as bold lines
+    const isSectionHeader = /^#+/.test(line) ||
+      /^(?:\*+|#+|\b)*(Executive Summary|Key Strengths|Missing Areas|Quick Actionable Improvements|Rubric Score Breakdown|Actionable Improvements|Matched Skills)(?:.*)(?:\*+|\b|:)*$/i.test(line) ||
+      (line.startsWith("*") && (line.endsWith("**") || line.endsWith("*")) && line.length < 80 && !/^[-*•]\s+/.test(line));
+
+    if (isSectionHeader) {
       if (currentList.length > 0) {
         elements.push(
           <ul key={`list-${i}`} style={{ margin: "0.5rem 0 1rem 0", paddingLeft: "1.5rem", color: "var(--text-secondary)" }}>
@@ -140,18 +151,18 @@ export function renderMarkdown(text) {
         );
         currentList = [];
       }
-      const level = line.match(/^#+/)[0].length;
-      const cleanText = line.replace(/^#+\s*/, "").replace(/\*\*|__/g, ""); // strip bold markers from header
+      const level = line.startsWith("#") ? line.match(/^#+/)[0].length : 3;
+      const cleanText = line.replace(/^#+\s*/, "").replace(/^\*+|\*+$/g, "").replace(/\*\*|__/g, "").trim();
       if (level === 1) {
-        elements.push(<h1 key={i} style={{ color: "white", margin: "1.5rem 0 0.75rem 0", fontSize: "1.6rem", fontWeight: "700" }}>{cleanText}</h1>);
+        elements.push(<h1 key={i} style={{ color: "white", margin: "1.5rem 0 0.75rem 0", fontSize: "1.6rem", fontWeight: "800" }}>{cleanText}</h1>);
       } else if (level === 2) {
-        elements.push(<h2 key={i} style={{ color: "var(--accent)", margin: "1.25rem 0 0.6rem 0", fontSize: "1.3rem", fontWeight: "600" }}>{cleanText}</h2>);
+        elements.push(<h2 key={i} style={{ color: "var(--accent)", margin: "1.25rem 0 0.6rem 0", fontSize: "1.3rem", fontWeight: "700" }}>{cleanText}</h2>);
       } else {
-        elements.push(<h3 key={i} style={{ color: "white", margin: "1rem 0 0.5rem 0", fontSize: "1.1rem", fontWeight: "600" }}>{cleanText}</h3>);
+        elements.push(<h3 key={i} style={{ color: "#38bdf8", margin: "1.35rem 0 0.5rem 0", fontSize: "1.18rem", fontWeight: "700", borderBottom: "1px solid rgba(56, 189, 248, 0.2)", paddingBottom: "0.4rem" }}>{cleanText}</h3>);
       }
     } 
-    // Check for bullet list items
-    else if (line.startsWith("-") || line.startsWith("*") || line.startsWith("•")) {
+    // Check for bullet list items (Must have a space after bullet or dash!)
+    else if (/^([-•]|\*\s)\s+/.test(line) || line.startsWith("- ") || line.startsWith("* ") || line.startsWith("• ")) {
       const cleanText = line.replace(/^[-*•]\s*/, "");
       const formattedText = parseInlineMarkdown(cleanText);
       currentList.push(formattedText);
@@ -244,6 +255,7 @@ export default function ResumeAnalyzer({ onBack, credits, onUpdateCredits }) {
   const [violationError, setViolationError] = useState("");
   const [report, setReport] = useState("");
   const [jdText, setJdText] = useState("");
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const API_BASE_URL = (
     import.meta.env.VITE_API_BASE_URL ||
@@ -340,10 +352,6 @@ export default function ResumeAnalyzer({ onBack, credits, onUpdateCredits }) {
       setError("Please paste resume text or upload a PDF first.");
       return;
     }
-    if (!trimmedJd) {
-      setError("Please paste a Job Description (JD) to match against.");
-      return;
-    }
 
     // Double check violation
     const evalResult = evaluateExperience(trimmedResume);
@@ -388,7 +396,9 @@ export default function ResumeAnalyzer({ onBack, credits, onUpdateCredits }) {
         throw new Error(data.error || "Failed to match resume with Job Description.");
       }
 
+      console.log("Received analysis report:", data.report);
       setReport(data.report);
+      setIsCollapsed(true);
       if (currentUser && typeof data.remainingCredits === "number") {
         onUpdateCredits?.(data.remainingCredits);
       }
@@ -445,6 +455,62 @@ export default function ResumeAnalyzer({ onBack, credits, onUpdateCredits }) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
         
+        {isCollapsed ? (
+          <div style={{
+            animation: "fadeIn 0.4s ease",
+            background: "rgba(15, 23, 42, 0.65)",
+            backdropFilter: "blur(12px)",
+            border: "1px solid rgba(56, 189, 248, 0.3)",
+            borderRadius: "16px",
+            padding: "1rem 1.5rem",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "1rem",
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.3)"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "1.5rem", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                <span style={{ fontSize: "1.3rem" }}>📄</span>
+                <div>
+                  <div style={{ fontSize: "0.72rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "700" }}>Resume Attached</div>
+                  <div style={{ color: "white", fontWeight: "600", fontSize: "0.95rem" }}>{fileName || "Pasted Text"} ({resumeText.split(/\s+/).filter(Boolean).length} words)</div>
+                </div>
+              </div>
+              <div style={{ width: "1px", height: "32px", background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                <span style={{ fontSize: "1.3rem" }}>💼</span>
+                <div>
+                  <div style={{ fontSize: "0.72rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "700" }}>Target Job Description</div>
+                  <div style={{ color: "white", fontWeight: "600", fontSize: "0.95rem" }}>{!jdText || jdText.trim().length < 15 ? "General Evaluation (No JD)" : "JD Attached (" + jdText.split(/\s+/).filter(Boolean).length + " words)"}</div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsCollapsed(false)}
+              style={{
+                padding: "8px 18px",
+                background: "linear-gradient(135deg, #3b82f6, #6366f1)",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                fontWeight: "600",
+                fontSize: "0.85rem",
+                cursor: "pointer",
+                boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)",
+                transition: "transform 0.15s ease"
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-1px)"}
+              onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
+            >
+              ✏️ Edit Resume or JD (New Analysis)
+            </button>
+          </div>
+        ) : (
+        <>
         {/* Split Input Layout */}
         <div style={{
           display: "grid",
@@ -645,10 +711,12 @@ export default function ResumeAnalyzer({ onBack, credits, onUpdateCredits }) {
             type="submit"
             className="coach-button"
             onClick={handleSubmit}
-            style={{ width: "auto", minWidth: "220px", margin: 0 }}
+            style={{ width: "auto", minWidth: "250px", margin: "0" }}
             disabled={loading || parsingPdf}
           >
-            {currentUser ? "Match & Analyze (-1 credit)" : "Match & Analyze (Free)"}
+            {!jdText || jdText.trim().length < 15
+              ? (currentUser ? "Proceed without JD (General Eval: -1 credit)" : "Proceed without JD (General Eval: Free)")
+              : (currentUser ? "Match & Analyze against JD (-1 credit)" : "Match & Analyze against JD (Free)")}
           </button>
 
           {/* Experience level policy violation inside action card */}
@@ -686,11 +754,16 @@ export default function ResumeAnalyzer({ onBack, credits, onUpdateCredits }) {
             </p>
           )}
         </section>
+        </>
+        )}
 
         {/* Report Display Block */}
         {report && (() => {
           const score = extractScore(report);
-          const cleanReport = report.replace(/^ATS Score:\s*\d+%\s*\n*/i, "");
+          const cleanReport = report
+            .replace(/^(?:#+\s*)?(?:ATS|Match|Overall)?\s*Score\s*:\s*\d+(?:\s*%\s*|\s*\/\s*100\s*)\n*/i, "")
+            .replace(/^\*\*(?:ATS|Match|Overall)?\s*Score\s*:\s*\d+(?:\s*%\s*|\s*\/\s*100\s*)\*\*\n*/i, "")
+            .trim();
 
           let scoreColor = "#ef4444"; // red
           let scoreBg = "rgba(239, 68, 68, 0.1)";
@@ -706,7 +779,7 @@ export default function ResumeAnalyzer({ onBack, credits, onUpdateCredits }) {
           }
 
           return (
-            <section className="card report-card reveal-on-scroll" style={{ animation: "fadeInUp 0.5s ease", width: "100%" }}>
+            <section className="card report-card" style={{ animation: "fadeInUp 0.5s ease", width: "100%", opacity: 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "1rem" }}>
                 <h3 style={{ color: "var(--accent)", margin: 0 }}>Recruiter Assessment Report</h3>
                 <button type="button" className="profile-history-btn" onClick={handleCopy} style={{ margin: 0, padding: "8px 16px", fontSize: "0.85rem" }}>

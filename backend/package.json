@@ -15,7 +15,8 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "firebase-admin": "^13.0.2",
-    "leetcode-analyzer": "file:.."
+    "leetcode-analyzer": "file:..",
+    "razorpay": "^2.9.8"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

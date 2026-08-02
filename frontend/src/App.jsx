@@ -5,8 +5,39 @@ import AuthPage from "./components/AuthPage";
 import AccountMenu from "./components/AccountMenu";
 import ProfilePage from "./components/ProfilePage";
 import EvaluationHistory from "./components/EvaluationHistory";
-import LinkedInAnalyzer from "./components/LinkedInAnalyzer";
 import ResumeAnalyzer from "./components/ResumeAnalyzer";
+import CreditsPage from "./components/CreditsPage";
+
+function RazorpayPaymentButton({ buttonId }) {
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    containerRef.current.innerHTML = "";
+
+    const form = document.createElement("form");
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/payment-button.js";
+    script.setAttribute("data-payment_button_id", buttonId);
+    script.async = true;
+
+    form.appendChild(script);
+    containerRef.current.appendChild(form);
+  }, [buttonId]);
+
+  return (
+    <div 
+      ref={containerRef} 
+      className="razorpay-btn-container" 
+      style={{ 
+        display: "flex", 
+        justifyContent: "center", 
+        width: "100%",
+        minHeight: "40px"
+      }} 
+    />
+  );
+}
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
@@ -273,256 +304,7 @@ function getSectionTone(title) {
   return "default";
 }
 
-function CreditsPage({ onBack }) {
-  const { currentUser, credits, setCredits, userProfile } = useAuth();
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [claiming, setClaiming] = useState(false);
-  const [status, setStatus] = useState({ type: "", message: "" });
 
-  const lastClaimedStr = userProfile?.lastClaimedFreeCredits;
-
-  useEffect(() => {
-    if (!lastClaimedStr) {
-      setTimeLeft(0);
-      return undefined;
-    }
-
-    const calculateTimeLeft = () => {
-      const lastClaimedTime = new Date(lastClaimedStr).getTime();
-      const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
-      const now = Date.now();
-      const diff = lastClaimedTime + oneWeekMs - now;
-      return diff > 0 ? Math.floor(diff / 1000) : 0;
-    };
-
-    setTimeLeft(calculateTimeLeft());
-
-    const interval = setInterval(() => {
-      const remaining = calculateTimeLeft();
-      setTimeLeft(remaining);
-      if (remaining <= 0) {
-        clearInterval(interval);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [lastClaimedStr]);
-
-  const formatCountdown = (totalSeconds) => {
-    if (totalSeconds <= 0) return "";
-    const days = Math.floor(totalSeconds / (24 * 3600));
-    const hours = Math.floor((totalSeconds % (24 * 3600)) / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    const parts = [];
-    if (days > 0) parts.push(`${days}d`);
-    if (hours > 0 || days > 0) parts.push(`${hours}h`);
-    if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}m`);
-    parts.push(`${seconds}s`);
-
-    return parts.join(" ");
-  };
-
-  const getAuthHeaders = async () => {
-    if (!currentUser) return {};
-    const token = await currentUser.getIdToken(true);
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    };
-  };
-
-  const handleClaimFreeCredits = async () => {
-    if (!currentUser) return;
-    setClaiming(true);
-    setStatus({ type: "", message: "" });
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/credits/claim-free`, {
-        method: "POST",
-        headers: await getAuthHeaders(),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Unable to claim free credits.");
-      }
-
-      setCredits(data.credits);
-      setStatus({
-        type: "success",
-        message: "Successfully claimed 3 free credits! Cooldown started.",
-      });
-    } catch (err) {
-      setStatus({
-        type: "error",
-        message: err.message || "Failed to claim credits.",
-      });
-    } finally {
-      setClaiming(false);
-    }
-  };
-
-  return (
-    <div className="profile-page-container">
-      <button type="button" className="profile-back-btn" onClick={onBack}>
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <line x1="19" y1="12" x2="5" y2="12"></line>
-          <polyline points="12 19 5 12 12 5"></polyline>
-        </svg>
-        Back to Dashboard
-      </button>
-
-      <div className="profile-grid">
-        <div className="profile-sidebar-card">
-          <div className="credits-icon-large">
-            <svg
-              width="40"
-              height="40"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#eab308"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="12" cy="12" r="8" />
-              <line x1="12" y1="8" x2="12" y2="16" />
-              <line x1="8" y1="12" x2="16" y2="12" />
-            </svg>
-          </div>
-          <h3>Credits Balance</h3>
-          <div className="profile-stat-box" style={{ marginTop: "1rem" }}>
-            <div
-              className="profile-stat-val"
-              style={{ fontSize: "2.5rem", color: "#eab308" }}
-            >
-              {credits}
-            </div>
-            <div className="profile-stat-label">Credits Remaining</div>
-          </div>
-        </div>
-
-        <div className="profile-main-card">
-          <div className="credits-header-row">
-            <h2>Manage Credits</h2>
-            <p className="credits-subtitle-note">
-              Claim your free weekly credits below.
-            </p>
-          </div>
-
-          <div className="credits-claim-section">
-            <div className="credits-claim-card">
-              <div className="credits-claim-info">
-                <h3>Weekly Free Reward</h3>
-                <p>
-                  Claim 3 free credits every week to generate comprehensive AI
-                  reports. Cooldown triggers for 7 days post claim.
-                </p>
-              </div>
-
-              <div className="credits-claim-action-box">
-                {timeLeft > 0 ? (
-                  <div className="credits-cooldown-timer">
-                    <span className="timer-lock-icon">
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                      >
-                        <rect
-                          x="3"
-                          y="11"
-                          width="18"
-                          height="11"
-                          rx="2"
-                          ry="2"
-                        />
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                      </svg>
-                    </span>
-                    <span className="timer-text">
-                      {formatCountdown(timeLeft)}
-                    </span>
-                  </div>
-                ) : null}
-
-                <button
-                  type="button"
-                  className={`credits-claim-btn ${timeLeft > 0 ? "locked" : ""}`}
-                  disabled={timeLeft > 0 || claiming}
-                  onClick={handleClaimFreeCredits}
-                >
-                  {claiming
-                    ? "Claiming..."
-                    : timeLeft > 0
-                      ? "Claim Locked"
-                      : "Get my free credits"}
-                </button>
-              </div>
-            </div>
-
-            <div className="credits-claim-card" style={{ border: "1px dashed #475569", background: "rgba(15, 23, 42, 0.4)", marginTop: "1.2rem" }}>
-              <div className="credits-claim-info">
-                <h3>Need more credits?</h3>
-                <p style={{ margin: "0.25rem 0 0", color: "#cbd5e1" }}>
-                  Email <a href="mailto:bovcare@gmail.com" style={{ color: "#38bdf8", fontWeight: "600", textDecoration: "underline" }}>bovcare@gmail.com</a> to contact customer support and purchase credits.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {status.message && (
-            <div
-              className={`profile-status-msg ${status.type}`}
-              style={{ marginTop: "2rem" }}
-            >
-              {status.type === "success" ? (
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              ) : (
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="8" x2="12" y2="12"></line>
-                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-              )}
-              {status.message}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function renderLineWithHighlights(line) {
   if (typeof line !== "string") return line;
@@ -1200,7 +982,8 @@ function LandingPage({ onAnalyzeClick }) {
 }
 
 function App() {
-  const { currentUser, credits, creditsReady, setCredits } = useAuth();
+  const { currentUser, credits, creditsReady, setCredits, userProfile, signOut } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const logVisitEvent = async (userObj = currentUser) => {
     const locObj = await getUserLocation();
@@ -1258,6 +1041,19 @@ function App() {
   if (isStandalone) {
     return <StandaloneDetailPage />;
   }
+
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem("leetlens_theme") || "dark";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("leetlens_theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
 
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1390,8 +1186,8 @@ function App() {
   useEffect(() => {
     const savedActiveId = localStorage.getItem("leetlens_active_report_id");
     if (savedActiveId && historyReports.length > 0) {
-      const rep = historyReports.find((r) => r.id === savedActiveId);
-      if (rep && !currentReportId) {
+      const rep = historyReports.find((r) => r.id === savedActiveId && r.type !== "resume");
+      if (rep && !currentReportId && rep.type !== "resume") {
         loadHistoryReport(rep);
       }
     }
@@ -1970,28 +1766,268 @@ function App() {
 
   return (
     <main className="container">
-      <header className="app-header">
-        <div
-          className="brand-row"
-          style={{ cursor: "pointer" }}
-          onClick={() => setView(currentUser ? "home" : "landing")}
-        >
-          <img src="/logo.png" alt="LeetLens logo" className="brand-logo" />
-          <h1 className="brand-wordmark">
-            <span className="leet">Leet</span>
-            <span className="lens">Lens</span>
-          </h1>
+      {/* Mobile Drawer Sidebar (YouTube style) */}
+      <div className={`mobile-sidebar-backdrop ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)}>
+        <div className={`mobile-sidebar-drawer ${sidebarOpen ? "open" : ""}`} onClick={(e) => e.stopPropagation()}>
+          <div className="drawer-header">
+            <button className="drawer-close-btn" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+            <div className="brand-row drawer-brand">
+              <img src="/logo.png" alt="LeetLens logo" className="brand-logo small-logo" style={{ width: "24px", height: "24px" }} />
+              <h2 className="brand-wordmark drawer-wordmark">
+                <span className="leet">Leet</span>
+                <span className="lens">Lens</span>
+              </h2>
+            </div>
+          </div>
+
+          {currentUser ? (
+            <div className="drawer-profile-card">
+              {currentUser.photoURL ? (
+                <img src={currentUser.photoURL} alt="profile" className="drawer-avatar-img" />
+              ) : (
+                <div className="drawer-avatar-initial">
+                  {(userProfile?.name || currentUser.displayName || currentUser.email || "U").charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="drawer-profile-info">
+                <div className="drawer-profile-name">{userProfile?.name || currentUser.displayName || "LeetLens User"}</div>
+                <div className="drawer-profile-email">{currentUser.email}</div>
+              </div>
+            </div>
+          ) : (
+            <div className="drawer-login-prompt">
+              <p>Sign in to unlock full LeetCode insights and premium features.</p>
+              <button
+                type="button"
+                className="drawer-login-btn"
+                onClick={() => {
+                  setView("auth");
+                  setSidebarOpen(false);
+                }}
+              >
+                Log In / Register
+              </button>
+            </div>
+          )}
+
+          <nav className="drawer-nav">
+            <button
+              type="button"
+              className={`drawer-nav-item ${view === "home" ? "active" : ""}`}
+              onClick={() => {
+                setView(currentUser ? "home" : "landing");
+                setSidebarOpen(false);
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+              <span>Dashboard</span>
+            </button>
+
+            {currentUser && (
+              <>
+                <button
+                  type="button"
+                  className={`drawer-nav-item ${view === "profile" ? "active" : ""}`}
+                  onClick={() => {
+                    setView("profile");
+                    setSidebarOpen(false);
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <span>My Profile</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`drawer-nav-item ${view === "credits" ? "active" : ""}`}
+                  onClick={() => {
+                    setView("credits");
+                    setSidebarOpen(false);
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="16" />
+                    <line x1="8" y1="12" x2="16" y2="12" />
+                  </svg>
+                  <span>Credits ({credits} left)</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`drawer-nav-item ${view === "history" ? "active" : ""}`}
+                  onClick={() => {
+                    setView("history");
+                    setSidebarOpen(false);
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 12h3l3 8 4-16 3 8h3" />
+                  </svg>
+                  <span>Evaluation History</span>
+                </button>
+
+
+
+                <button
+                  type="button"
+                  className={`drawer-nav-item ${view === "resume" ? "active" : ""}`}
+                  onClick={() => {
+                    setView("resume");
+                    setSidebarOpen(false);
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                  </svg>
+                  <span>Resume Analyzer</span>
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              className="drawer-nav-item"
+              onClick={() => {
+                toggleTheme();
+              }}
+            >
+              {theme === "dark" ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="5"/>
+                  <line x1="12" y1="1" x2="12" y2="3"/>
+                  <line x1="12" y1="21" x2="12" y2="23"/>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                  <line x1="1" y1="12" x2="3" y2="12"/>
+                  <line x1="21" y1="12" x2="23" y2="12"/>
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              )}
+              <span>Theme: {theme === "dark" ? "Dark" : "Light"}</span>
+            </button>
+
+            {currentUser && (
+              <button
+                type="button"
+                className="drawer-nav-item drawer-signout-btn"
+                onClick={async () => {
+                  await signOut();
+                  setSidebarOpen(false);
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                <span>Sign Out</span>
+              </button>
+            )}
+          </nav>
         </div>
-        {!showReportPage && (
-          <AccountMenu
-            onLogin={() => setView("auth")}
-            onProfileClick={() => setView("profile")}
-            onCreditsClick={() => setView("credits")}
-            onHistoryClick={() => setView("history")}
-            onLinkedinClick={() => setView("linkedin")}
-            onResumeClick={() => setView("resume")}
-          />
-        )}
+      </div>
+
+      <header className="app-header">
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          {/* Hamburger Menu Button */}
+          <button
+            type="button"
+            className="hamburger-menu-btn"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open Navigation Drawer"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+
+          <div
+            className="brand-row"
+            style={{ cursor: "pointer" }}
+            onClick={() => setView(currentUser ? "home" : "landing")}
+          >
+            <img src="/logo.png" alt="LeetLens logo" className="brand-logo" />
+            <h1 className="brand-wordmark">
+              <span className="leet">Leet</span>
+              <span className="lens">Lens</span>
+            </h1>
+          </div>
+        </div>
+        <div className="header-right-actions" style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          {currentUser && !showReportPage && (
+            <button
+              type="button"
+              className="header-credits-pill"
+              onClick={() => setView("credits")}
+              title="Click to Buy or Manage Credits"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M12 7v10M9 9.5a2.5 2.5 0 0 1 5 0c0 1.4-1.1 2.2-2.5 2.5s-2.5 1.1-2.5 2.5a2.5 2.5 0 0 0 5 0"/>
+              </svg>
+              <span>{credits} Credits</span>
+              <span className="header-buy-chip">Buy</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === "dark" ? "Light" : "Dark"} mode`}
+            aria-label="Toggle Theme"
+          >
+            {theme === "dark" ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5"/>
+                <line x1="12" y1="1" x2="12" y2="3"/>
+                <line x1="12" y1="21" x2="12" y2="23"/>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                <line x1="1" y1="12" x2="3" y2="12"/>
+                <line x1="21" y1="12" x2="23" y2="12"/>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              </svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            )}
+          </button>
+          {!showReportPage && (
+            <AccountMenu
+              theme={theme}
+              onToggleTheme={toggleTheme}
+              onLogin={() => setView("auth")}
+              onProfileClick={() => setView("profile")}
+              onCreditsClick={() => setView("credits")}
+              onHistoryClick={() => setView("history")}
+              onResumeClick={() => setView("resume")}
+            />
+          )}
+        </div>
       </header>
 
       {view === "landing" ? (
@@ -2027,12 +2063,7 @@ function App() {
         />
       ) : view === "credits" ? (
         <CreditsPage onBack={() => setView("home")} />
-      ) : view === "linkedin" ? (
-        <LinkedInAnalyzer
-          onBack={() => setView("home")}
-          credits={credits}
-          onUpdateCredits={(newCredits) => setCredits(newCredits)}
-        />
+
       ) : view === "resume" ? (
         <ResumeAnalyzer
           onBack={() => setView("home")}
@@ -2100,9 +2131,9 @@ function App() {
           </section>
 
           <section className="card coach-card" style={{ marginTop: "1.5rem" }}>
-            <h2>Resume & LinkedIn Profile Analyzer</h2>
+            <h2>Resume Analyzer</h2>
             <p className="topics-note" style={{ marginBottom: "1.2rem" }}>
-              Upload your resume PDF or paste LinkedIn profile text to get an instant recruitment and ATS evaluation.
+              Upload your resume PDF or paste raw text to get an instant recruitment and ATS evaluation.
             </p>
             <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
               <button
@@ -2112,14 +2143,6 @@ function App() {
                 style={{ width: "auto", minWidth: "180px", margin: 0 }}
               >
                 Go to Resume Analyzer
-              </button>
-              <button
-                type="button"
-                className="coach-button"
-                onClick={() => setView("linkedin")}
-                style={{ width: "auto", minWidth: "180px", margin: 0, background: "rgba(139, 92, 246, 0.15)", border: "1px solid var(--accent)" }}
-              >
-                Go to LinkedIn Analyzer
               </button>
             </div>
           </section>
@@ -2779,6 +2802,7 @@ function App() {
           <div
             className="premium-modal-card zero-credits-modal"
             onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "680px" }}
           >
             <button
               type="button"
@@ -2805,10 +2829,104 @@ function App() {
             </div>
             <h2>0 Credits Left</h2>
             <p>
-              You have run out of evaluation credits. Please buy credits or
-              claim your free weekly credits to generate a new AI report.
+              You have run out of evaluation credits. Choose a top-up tier below to buy instantly, or click Manage to view your account.
             </p>
-            <div className="premium-modal-actions">
+
+            <div className="purchase-tier-grid" style={{ marginTop: "1.25rem", gap: "0.85rem" }}>
+              {[
+                { key: "10_rs9", name: "10 Credits", priceRs: 9 },
+                { key: "20_rs19", name: "20 Credits", priceRs: 19, badge: "POPULAR" },
+                { key: "50_rs29", name: "50 Credits", priceRs: 29, badge: "BEST VALUE" },
+              ].map((pkg) => (
+                <div key={pkg.key} className={`tier-card ${pkg.badge ? "highlighted-tier" : ""}`} style={{ padding: "1.1rem 0.9rem" }}>
+                  {pkg.badge && <span className="tier-badge" style={{ fontSize: "0.6rem" }}>{pkg.badge}</span>}
+                  <h4 style={{ margin: "0 0 0.35rem", color: "var(--text-primary)", fontSize: "1rem" }}>{pkg.name}</h4>
+                  <div style={{ fontSize: "1.8rem", fontWeight: "800", color: "var(--accent-cyan)", marginBottom: "0.75rem" }}>
+                    ₹{pkg.priceRs}
+                  </div>
+                  {pkg.key === "10_rs9" ? (
+                    <div style={{ marginTop: "auto", display: "flex", justifyContent: "center", width: "100%", pt: "0.5rem" }}>
+                      <RazorpayPaymentButton buttonId="pl_TKrPIxTPp9fzl9" />
+                    </div>
+                  ) : pkg.key === "20_rs19" ? (
+                    <div style={{ marginTop: "auto", display: "flex", justifyContent: "center", width: "100%", pt: "0.5rem" }}>
+                      <RazorpayPaymentButton buttonId="pl_TKrTQCnAuvKEYk" />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="tier-buy-btn"
+                      style={{ padding: "0.55rem", fontSize: "0.88rem" }}
+                      onClick={async () => {
+                        try {
+                          const token = await currentUser.getIdToken(true);
+                          const authHeaders = {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`,
+                          };
+                          const orderRes = await fetch(`${API_BASE_URL}/api/credits/create-order`, {
+                            method: "POST",
+                            headers: authHeaders,
+                            body: JSON.stringify({ packageKey: pkg.key }),
+                          });
+                          const orderData = await orderRes.json();
+                          if (!orderRes.ok) throw new Error(orderData.error || "Order creation failed.");
+
+                          const options = {
+                            key: orderData.key_id || import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_TFM4cTiksu0var",
+                            amount: orderData.amount,
+                            currency: orderData.currency || "INR",
+                            name: "LeetLens",
+                            description: `Purchase ${pkg.name} for ₹${pkg.priceRs}`,
+                            image: "/logo.png",
+                            order_id: orderData.order_id,
+                            handler: async function (response) {
+                              try {
+                                const verifyRes = await fetch(`${API_BASE_URL}/api/credits/verify-payment`, {
+                                  method: "POST",
+                                  headers: authHeaders,
+                                  body: JSON.stringify({
+                                    razorpay_order_id: response.razorpay_order_id,
+                                    razorpay_payment_id: response.razorpay_payment_id,
+                                    razorpay_signature: response.razorpay_signature,
+                                    packageKey: pkg.key,
+                                  }),
+                                });
+                                const verifyData = await verifyRes.json();
+                                if (verifyRes.ok) {
+                                  setCredits(verifyData.credits);
+                                  setShowZeroCreditsModal(false);
+                                  alert(`🎉 Payment successful! Added credits to your account. Total: ${verifyData.credits} credits.`);
+                                } else {
+                                  alert(verifyData.error || "Payment verification failed.");
+                                }
+                              } catch (ve) {
+                                alert(ve.message || "Payment verification failed.");
+                              }
+                            },
+                            prefill: {
+                              email: currentUser.email || "",
+                            },
+                            theme: { color: "#38bdf8" },
+                          };
+                          if (typeof window.Razorpay !== "function") {
+                            throw new Error("Razorpay SDK not loaded. Please refresh.");
+                          }
+                          const rzp = new window.Razorpay(options);
+                          rzp.open();
+                        } catch (e) {
+                          alert(e.message || "Purchase failed.");
+                        }
+                      }}
+                    >
+                      Pay ₹{pkg.priceRs}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="premium-modal-actions" style={{ marginTop: "1.5rem" }}>
               <button
                 type="button"
                 className="premium-btn-primary"
@@ -2817,14 +2935,14 @@ function App() {
                   setShowZeroCreditsModal(false);
                 }}
               >
-                Buy / Claim Credits
+                Manage All Credits
               </button>
               <button
                 type="button"
                 className="premium-btn-secondary"
                 onClick={() => setShowZeroCreditsModal(false)}
               >
-                Maybe Later
+                Close
               </button>
             </div>
           </div>

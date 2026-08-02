@@ -3,6 +3,8 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
+const Razorpay = require("razorpay");
 
 let admin = null;
 try {
@@ -12,6 +14,11 @@ try {
 }
 
 dotenv.config({ path: path.join(__dirname, ".env") });
+
+const razorpayInstance = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_TFM4cTiksu0var",
+  key_secret: process.env.RAZORPAY_KEY_SECRET || "Vj4M6xnUqUhvGVZm1tbpQLCN",
+});
 
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
@@ -25,10 +32,9 @@ const REGISTERED_USERS_COLLECTION = "registered_users";
 const FIRESTORE_USER_SEARCH_COLLECTION = "user_searches";
 const DEFAULT_USER_CREDITS = 10;
 const CREDIT_PACKAGES = {
-  "10_rs19": { credits: 10, priceRs: 19 },
-  "20_rs29": { credits: 20, priceRs: 29 },
-  "50_rs49": { credits: 50, priceRs: 49 },
-  "100_rs79": { credits: 100, priceRs: 79 },
+  "10_rs9": { credits: 10, priceRs: 9 },
+  "20_rs19": { credits: 20, priceRs: 19 },
+  "50_rs29": { credits: 50, priceRs: 29 },
 };
 
 app.set("trust proxy", true);
@@ -399,7 +405,7 @@ async function requireAvailableCredit(uid) {
   return credits;
 }
 
-async function addCreditsForPackage(uid, packageKey) {
+async function addCreditsForPackage(uid, packageKey, paymentDetails = {}) {
   const pkg = CREDIT_PACKAGES[packageKey];
   if (!pkg) {
     const badPackageError = new Error("Invalid credits package selected.");
@@ -408,6 +414,8 @@ async function addCreditsForPackage(uid, packageKey) {
   }
 
   const ref = getUserRef(uid);
+  const txId = paymentDetails.paymentId || `tx_${Date.now()}`;
+  const transRef = ref.collection("transactions").doc(txId);
 
   return firestoreDb.runTransaction(async (txn) => {
     const snap = await txn.get(ref);
@@ -429,6 +437,18 @@ async function addCreditsForPackage(uid, packageKey) {
       },
       { merge: true },
     );
+
+    txn.set(transRef, {
+      id: txId,
+      paymentId: paymentDetails.paymentId || `pay_${Date.now()}`,
+      orderId: paymentDetails.orderId || "N/A",
+      packageKey,
+      credits: pkg.credits,
+      amountRs: pkg.priceRs,
+      status: "SUCCESS",
+      method: paymentDetails.method || "Razorpay Checkout",
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
     return {
       credits: nextCredits,
@@ -1335,9 +1355,6 @@ app.post("/api/resume/match", optionalVerifyFirebaseToken, async (req, res) => {
   if (!resumeText) {
     return res.status(400).json({ error: "Resume text is required." });
   }
-  if (!jdText) {
-    return res.status(400).json({ error: "Job Description (JD) is required." });
-  }
 
   try {
     if (req.authUser) {
@@ -1345,43 +1362,45 @@ app.post("/api/resume/match", optionalVerifyFirebaseToken, async (req, res) => {
       await requireAvailableCredit(req.authUser.uid);
     }
 
+    const isGeneralEval = !jdText || jdText.trim().length < 15;
     const prompt = [
-      "You are an expert technical recruiter, career coach, and ATS (Applicant Tracking System) reviewer.",
-      "Analyze the candidate's Resume against the provided Job Description (JD).",
+      "You are an expert technical recruiter and ATS algorithms evaluator.",
+      isGeneralEval
+        ? "Evaluate the candidate's Resume thoroughly using standard ATS scoring rules. (No specific Job Description was provided or it was too brief/trivial to use)."
+        : "Evaluate the candidate's Resume against the provided Job Description (JD) while strictly applying standard ATS scoring rules.",
       "",
-      "CRITICAL: On the very first line of your response, you MUST output exactly: 'ATS Score: XX%' (replace XX with the calculated score between 0 and 100). Do not put any text before this. Immediately after, output a blank line and start the rest of the report.",
+      "CRITICAL SCORING RUBRIC & METRICS (Strictly apply these exact rules to compute the final integer score out of 100):",
+      "1. Name & Contact Info: +10 marks if candidate name, email, or phone are clearly present.",
+      "2. Education Section: +10 marks if formal education/degrees and graduation dates are included.",
+      "3. Projects: +15 marks for 1 well-explained project; +30 marks (max) for 2 or more projects.",
+      "4. Work & Professional Experience: +10 marks for experience at 1 company/internship; +20 marks (max) for 2 or more companies.",
+      "5. Bullet Points Analysis: Target is 15 to 18 total bullet points across projects and work experience (+20 marks if well-structured within or above this range). If below 15 bullet points, deduct 5 marks for each missing bullet below 15.",
+      "6. Page Length Penalty: If the resume content is excessively long and appears to exceed 2 pages (or >750 words / >4500 chars), deduct 30 marks for lacking executive conciseness.",
+      isGeneralEval
+        ? "7. Final Score: Clamp the total calculated score strictly between 0 and 100."
+        : "7. JD Alignment & Keywords: Adjust the computed rubric score based on keyword match with the provided Job Description. Clamp the final score strictly between 0 and 100.",
       "",
-      "Generate a practical, comprehensive, and beautiful evaluation report including the following specific sections:",
+      "CRITICAL FORMATTING INSTRUCTIONS:",
+      "- On the very first line of your response, output EXACTLY: 'ATS Score: XX/100' (replace XX with your calculated integer score from 0 to 100). Nothing else on line 1.",
+      "- After a blank line, provide concise, high-impact markdown feedback under 300 words using these exact level-3 headers with bold formatting:",
       "",
-      "1. Overall Match Score & Executive Summary",
-      "   - Clearly output a score between 0% and 100% indicating the match level.",
-      "   - Provide a 2-3 sentence executive summary explaining this score.",
+      "### **Executive Summary & Rubric Score Breakdown**",
+      "(Explain briefly how marks were awarded or deducted based on name, education, projects count, company experiences count, bullet count, and length penalties).",
       "",
-      "2. Skill Extraction & Percentage Match",
-      "   - Extract all key skills from the Job Description.",
-      "   - Extract all skills present in the Resume.",
-      "   - Match them and list which required skills are Present, Partially Present, or Missing, including a calculated matching percentage for key categories (e.g. Technical Skills, Soft Skills).",
+      "### **Key Strengths & Matched Skills**",
+      "(3 to 4 bullet points starting with '- ' showing core technical competencies or JD alignments).",
       "",
-      "3. Key Keyword Gaps & ATS Highlights",
-      "   - Extract all critical keywords from the JD.",
-      "   - Identify which are present in the resume and which are critical missing keywords.",
+      "### **Missing Areas & Keyword Gaps**",
+      "(3 to 4 bullet points starting with '- ' showing missing skills, certifications, or formatting gaps).",
       "",
-      "4. Date Verification & Chronological Correctness",
-      "   - Inspect all employment and education dates listed in the resume.",
-      "   - Verify that dates are entered correctly: check for chronological order (descending order), identify any gaps in employment/education, formatting inconsistencies, or unrealistic dates (e.g. future dates without 'Present' notation).",
-      "   - State clearly if everything is done correctly, or highlight specific date and ordering issues.",
-      "",
-      "5. Detailed Fit Analysis & Actionable Tailoring Recommendations",
-      "   - Detail the strengths of the candidate's resume relative to the JD.",
-      "   - Provide actionable bullet points on how the candidate can modify their resume's wording, highlights, and structure to maximize matching and correctness for this specific role.",
+      "### **Quick Actionable Improvements**",
+      "(2 to 3 practical tips starting with '- ' to immediately raise the resume's ATS score).",
       "",
       "Job Description:",
-      jdText.slice(0, 10000),
+      isGeneralEval ? "None / General Evaluation" : jdText.slice(0, 12000),
       "",
-      "Resume/Profile Content:",
-      resumeText.slice(0, 10000),
-      "",
-      "Format the output as clean markdown without any surrounding conversation. Use bold text and clean bulleted sections."
+      "Resume Content:",
+      resumeText.slice(0, 12000)
     ].join("\n");
 
     const response = await fetch(GROQ_API_URL, {
@@ -1393,10 +1412,11 @@ app.post("/api/resume/match", optionalVerifyFirebaseToken, async (req, res) => {
       body: JSON.stringify({
         model: GROQ_MODEL,
         temperature: 0.2,
+        max_tokens: 750,
         messages: [
           {
             role: "system",
-            content: "You are an expert competitive programming coach and hiring evaluator. Follow user instructions exactly.",
+            content: "You are an expert technical recruiter and AI resume match evaluator. Be direct, accurate, and concise.",
           },
           {
             role: "user",
@@ -1408,6 +1428,7 @@ app.post("/api/resume/match", optionalVerifyFirebaseToken, async (req, res) => {
 
     const payload = await response.json();
     if (!response.ok) {
+      console.error("Groq API resume match failed:", payload);
       return res
         .status(502)
         .json({ error: payload.error?.message || "Groq API request failed." });
@@ -1423,6 +1444,13 @@ app.post("/api/resume/match", optionalVerifyFirebaseToken, async (req, res) => {
     let remainingCredits = null;
     let reportId = null;
 
+    let score = null;
+    const scoreMatch = report.match(/(?:ATS|Match|Overall)?\s*Score\s*:\s*(\d+)/i) || report.match(/\b(\d+)\s*\/\s*100\b/);
+    if (scoreMatch) {
+      const val = parseInt(scoreMatch[1], 10);
+      if (val >= 0 && val <= 100) score = val;
+    }
+
     if (req.authUser) {
       remainingCredits = await consumeOneCredit(req.authUser.uid);
 
@@ -1434,6 +1462,7 @@ app.post("/api/resume/match", optionalVerifyFirebaseToken, async (req, res) => {
         content: resumeText,
         jdText,
         report,
+        score,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -1444,7 +1473,7 @@ app.post("/api/resume/match", optionalVerifyFirebaseToken, async (req, res) => {
         req,
         type: "resume_match_report",
         reportContent: report,
-        analysisData: { resumeTextSnippet: resumeText.slice(0, 500), jdTextSnippet: jdText.slice(0, 500), fileName },
+        analysisData: { resumeTextSnippet: resumeText.slice(0, 500), jdTextSnippet: jdText.slice(0, 500), fileName, score },
       });
     } else {
       // Save to subcollection unregistered_visits/{visitId}/resumes
@@ -1472,6 +1501,7 @@ app.post("/api/resume/match", optionalVerifyFirebaseToken, async (req, res) => {
         content: resumeText,
         jdText,
         report,
+        score,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
       });
       reportId = visitResumesRef.id;
@@ -1521,6 +1551,284 @@ app.post("/api/credits/purchase", verifyFirebaseToken, async (req, res) => {
           : "Unable to purchase credits.",
       details: error.message,
     });
+  }
+});
+
+// Razorpay Order Creation Endpoint
+app.post("/api/credits/create-order", verifyFirebaseToken, async (req, res) => {
+  try {
+    const packageKey = (req.body?.packageKey || "").toString().trim();
+    const pkg = CREDIT_PACKAGES[packageKey];
+
+    if (!pkg) {
+      return res.status(400).json({ error: "Invalid credits package selected." });
+    }
+
+    const amountInPaise = pkg.priceRs * 100;
+    if (amountInPaise < 100) {
+      return res.status(400).json({ error: "Amount must be at least 100 paise (Rs 1)." });
+    }
+
+    const options = {
+      amount: amountInPaise,
+      currency: "INR",
+      receipt: `rcpt_${req.authUser.uid.slice(0, 8)}_${Date.now()}`,
+      notes: {
+        uid: req.authUser.uid,
+        packageKey,
+        credits: pkg.credits,
+      },
+    };
+
+    const order = await razorpayInstance.orders.create(options);
+    return res.json({
+      order_id: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      packageKey,
+      key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_TFM4cTiksu0var",
+    });
+  } catch (error) {
+    console.error("Error creating Razorpay order:", error);
+    return res.status(500).json({
+      error: "Unable to create Razorpay order.",
+      details: error.message,
+    });
+  }
+});
+
+app.post("/api/create-order", verifyFirebaseToken, async (req, res) => {
+  // Alias for /api/credits/create-order with amount or packageKey fallback
+  try {
+    let packageKey = (req.body?.packageKey || "").toString().trim();
+    if (!packageKey && req.body?.amount) {
+      const amtRs = Math.round(Number(req.body.amount) / 100);
+      if (amtRs <= 10) packageKey = "10_rs9";
+      else if (amtRs <= 20) packageKey = "20_rs19";
+      else packageKey = "50_rs29";
+    }
+    const pkg = CREDIT_PACKAGES[packageKey] || CREDIT_PACKAGES["10_rs9"];
+    const amountInPaise = req.body?.amount ? Number(req.body.amount) : pkg.priceRs * 100;
+
+    if (amountInPaise < 100) {
+      return res.status(400).json({ error: "Amount must be at least 100 paise." });
+    }
+
+    const options = {
+      amount: amountInPaise,
+      currency: "INR",
+      receipt: `rcpt_${req.authUser.uid.slice(0, 8)}_${Date.now()}`,
+    };
+
+    const order = await razorpayInstance.orders.create(options);
+    return res.json({
+      order_id: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_TFM4cTiksu0var",
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Unable to create Razorpay order.", details: error.message });
+  }
+});
+
+// Razorpay Payment Signature Verification Endpoint
+app.post("/api/credits/verify-payment", verifyFirebaseToken, async (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, packageKey } = req.body || {};
+
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    return res.status(400).json({ error: "Missing required Razorpay payment verification fields." });
+  }
+
+  const packageKeyStr = (packageKey || "").toString().trim();
+  const pkg = CREDIT_PACKAGES[packageKeyStr];
+  if (!pkg) {
+    return res.status(400).json({ error: "Invalid credits package selected." });
+  }
+
+  try {
+    const keySecret = process.env.RAZORPAY_KEY_SECRET || "Vj4M6xnUqUhvGVZm1tbpQLCN";
+    const bodyData = razorpay_order_id + "|" + razorpay_payment_id;
+    const generatedSignature = crypto
+      .createHmac("sha256", keySecret)
+      .update(bodyData.toString())
+      .digest("hex");
+
+    if (generatedSignature !== razorpay_signature) {
+      return res.status(400).json({ error: "Payment verification failed. Invalid signature." });
+    }
+
+    // Signature matches -> credit user account
+    await ensureUserDocument(req.authUser, req);
+    const result = await addCreditsForPackage(req.authUser.uid, packageKeyStr, {
+      paymentId: razorpay_payment_id,
+      orderId: razorpay_order_id,
+      method: "Razorpay Checkout"
+    });
+
+    const latestSnap = await getUserRef(req.authUser.uid).get();
+    const latestData = latestSnap.data() || {};
+    const user = toPublicUserProfile(req.authUser.uid, latestData, req.authUser);
+
+    return res.json({
+      success: true,
+      credits: result.credits,
+      addedCredits: result.package.credits,
+      amountRs: result.package.priceRs,
+      user,
+    });
+  } catch (error) {
+    console.error("Error verifying payment signature:", error);
+    return res.status(500).json({
+      error: "Unable to verify payment signature.",
+      details: error.message,
+    });
+  }
+});
+
+app.post("/api/razorpay-webhook", async (req, res) => {
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "razorpay_secret";
+  const signature = req.headers["x-razorpay-signature"];
+
+  if (!signature) {
+    return res.status(400).json({ error: "Missing x-razorpay-signature header." });
+  }
+
+  // Verify signature
+  const shasum = crypto.createHmac("sha256", webhookSecret);
+  shasum.update(JSON.stringify(req.body));
+  const digest = shasum.digest("hex");
+
+  if (digest !== signature) {
+    return res.status(400).json({ error: "Invalid signature verification." });
+  }
+
+  const event = req.body.event;
+  if (event === "payment.captured") {
+    const payment = req.body.payload?.payment?.entity;
+    if (payment) {
+      const email = payment.email;
+      const amount = payment.amount; // in paise
+
+      if (email) {
+        try {
+          const db = firestoreDb;
+          const usersRef = db.collection(REGISTERED_USERS_COLLECTION);
+          const snapshot = await usersRef.where("email", "==", email.toLowerCase().trim()).get();
+
+          if (!snapshot.empty) {
+            const userDoc = snapshot.docs[0];
+            const uid = userDoc.id;
+            const amountRs = Math.round(amount / 100);
+            let pkgKey = "10_rs9";
+
+            if (amountRs === 9 || amountRs <= 10) {
+              pkgKey = "10_rs9";
+            } else if (amountRs === 19 || amountRs <= 20) {
+              pkgKey = "20_rs19";
+            } else {
+              pkgKey = "50_rs29";
+            }
+
+            await addCreditsForPackage(uid, pkgKey, {
+              paymentId: payment.id || `wh_${Date.now()}`,
+              orderId: payment.order_id || "N/A",
+              method: "Razorpay Webhook"
+            });
+            console.log(`[Webhook] Credited package ${pkgKey} to user ${uid} (${email}).`);
+          } else {
+            console.warn(`[Webhook] No user found with email: ${email}`);
+          }
+        } catch (err) {
+          console.error("[Webhook] Firestore update error:", err);
+        }
+      }
+    }
+  }
+
+  return res.json({ status: "ok" });
+});
+
+app.post("/api/verify-payment", verifyFirebaseToken, async (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    return res.status(400).json({ error: "Missing required fields." });
+  }
+  try {
+    const keySecret = process.env.RAZORPAY_KEY_SECRET || "Vj4M6xnUqUhvGVZm1tbpQLCN";
+    const bodyData = razorpay_order_id + "|" + razorpay_payment_id;
+    const generatedSignature = crypto
+      .createHmac("sha256", keySecret)
+      .update(bodyData.toString())
+      .digest("hex");
+
+    if (generatedSignature !== razorpay_signature) {
+      return res.status(400).json({ error: "Invalid payment signature." });
+    }
+    return res.json({ success: true, message: "Payment verified successfully." });
+  } catch (error) {
+    return res.status(500).json({ error: "Verification failed.", details: error.message });
+  }
+});
+
+app.get("/api/credits/transactions", verifyFirebaseToken, async (req, res) => {
+  try {
+    await ensureUserDocument(req.authUser, req);
+    const snap = await getUserRef(req.authUser.uid).collection("transactions").orderBy("timestamp", "desc").get();
+    const transactions = [];
+    snap.forEach((doc) => {
+      const data = doc.data();
+      let dateStr = "Recently";
+      if (data.timestamp && typeof data.timestamp.toDate === "function") {
+        dateStr = data.timestamp.toDate().toLocaleString("en-IN", {
+          month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit"
+        });
+      } else if (data.timestamp && data.timestamp._seconds) {
+        dateStr = new Date(data.timestamp._seconds * 1000).toLocaleString("en-IN", {
+          month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit"
+        });
+      }
+      transactions.push({
+        id: doc.id,
+        paymentId: data.paymentId || doc.id,
+        orderId: data.orderId || "N/A",
+        packageKey: data.packageKey || "10_rs9",
+        credits: data.credits || 0,
+        amountRs: data.amountRs || 0,
+        status: data.status || "SUCCESS",
+        method: data.method || "Razorpay Checkout",
+        dateStr
+      });
+    });
+
+    // Fallback if transactions subcollection is empty but lastPurchase exists
+    if (transactions.length === 0) {
+      const userSnap = await getUserRef(req.authUser.uid).get();
+      const userData = userSnap.data() || {};
+      if (userData.lastPurchase) {
+        const lp = userData.lastPurchase;
+        let dt = "Previous Purchase";
+        if (lp.purchasedAt && typeof lp.purchasedAt.toDate === "function") {
+          dt = lp.purchasedAt.toDate().toLocaleString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+        }
+        transactions.push({
+          id: "legacy_last_purchase",
+          paymentId: "Completed Transaction",
+          orderId: "N/A",
+          packageKey: lp.packageKey || "10_rs9",
+          credits: lp.credits || 0,
+          amountRs: lp.amountRs || 0,
+          status: "SUCCESS",
+          method: "Razorpay Checkout",
+          dateStr: dt
+        });
+      }
+    }
+
+    return res.json({ transactions });
+  } catch (err) {
+    console.error("Error fetching transaction history:", err);
+    return res.status(500).json({ error: "Unable to load transaction history." });
   }
 });
 
@@ -1805,6 +2113,7 @@ app.get("/api/reports/history", verifyFirebaseToken, async (req, res) => {
       if (data.type === "ai_report") {
         reports.push({
           id: doc.id,
+          type: "leetcode",
           username: data.username,
           timestamp: data.timestamp,
           report: data.report || "",
@@ -1823,6 +2132,35 @@ app.get("/api/reports/history", verifyFirebaseToken, async (req, res) => {
         });
       }
     });
+
+    // Also fetch saved resume evaluations
+    try {
+      const resumesRef = firestoreDb
+        .collection(REGISTERED_USERS_COLLECTION)
+        .doc(uid)
+        .collection("resumes");
+      const resumesSnap = await resumesRef.get();
+      resumesSnap.forEach((doc) => {
+        const data = doc.data();
+        let extractedScore = data.score;
+        if (extractedScore === undefined || extractedScore === null) {
+          const m = (data.report || "").match(/(?:ATS|Match|Overall)?\s*Score\s*:\s*(\d+)/i) || (data.report || "").match(/\b(\d+)\s*\/\s*100\b/);
+          if (m) extractedScore = parseInt(m[1], 10);
+        }
+        reports.push({
+          id: doc.id,
+          type: "resume",
+          fileName: data.fileName || "Resume Analysis",
+          content: data.content || "",
+          jdText: data.jdText || "",
+          report: data.report || "",
+          score: extractedScore || null,
+          timestamp: data.timestamp,
+        });
+      });
+    } catch (resumeErr) {
+      console.error("Error fetching resume history:", resumeErr);
+    }
 
     // Sort in-memory descending by timestamp
     reports.sort((a, b) => {
