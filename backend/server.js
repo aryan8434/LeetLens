@@ -998,25 +998,41 @@ async function buildAnalysisData(username) {
 
   let streak = 0;
   let last30DaysSubmissions = 0;
+  let totalActiveDays = 0;
+  let dailyHeatmap = [];
   try {
     const calendarData = await postLeetCodeQuery(username, CALENDAR_QUERY);
     const cal = calendarData?.matchedUser?.userCalendar;
     streak = Number(cal?.streak || 0);
+    totalActiveDays = Number(cal?.totalActiveDays || 0);
 
     if (cal?.submissionCalendar) {
       const map = JSON.parse(cal.submissionCalendar);
       const nowSec = Math.floor(Date.now() / 1000);
-      const start = nowSec - 30 * 24 * 60 * 60;
+      const thirtyDaysAgo = nowSec - 30 * 24 * 60 * 60;
+      const oneYearAgo = nowSec - 365 * 24 * 60 * 60;
+
       Object.entries(map).forEach(([ts, count]) => {
         const t = Number(ts);
-        if (t >= start && t <= nowSec) {
-          last30DaysSubmissions += Number(count || 0);
+        const c = Number(count || 0);
+        if (t >= thirtyDaysAgo && t <= nowSec) {
+          last30DaysSubmissions += c;
+        }
+        if (t >= oneYearAgo && t <= nowSec) {
+          const d = new Date(t * 1000);
+          dailyHeatmap.push({
+            date: d.toISOString().slice(0, 10),
+            count: c,
+          });
         }
       });
+
+      dailyHeatmap.sort((a, b) => a.date.localeCompare(b.date));
     }
   } catch (_error) {
     streak = 0;
     last30DaysSubmissions = 0;
+    dailyHeatmap = [];
   }
 
   return {
@@ -1046,7 +1062,8 @@ async function buildAnalysisData(username) {
           : last30DaysSubmissions >= 8
             ? "Medium"
             : "Low",
-      dailyHeatmap: [],
+      dailyHeatmap,
+      totalActiveDays,
     },
     timing: {
       avgAcceptedPerDayLast30: Number((last30DaysSubmissions / 30).toFixed(2)),

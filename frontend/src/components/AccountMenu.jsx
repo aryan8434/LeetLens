@@ -1,4 +1,27 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
+import Avatar from "@mui/material/Avatar";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import Divider from "@mui/material/Divider";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { alpha, useTheme } from "@mui/material/styles";
+
+import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
+import TokenRoundedIcon from "@mui/icons-material/TokenRounded";
+import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
+import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
+import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
+import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
+import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
+import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
+import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
+
 import { useAuth } from "../contexts/AuthContext";
 
 export default function AccountMenu({
@@ -7,257 +30,187 @@ export default function AccountMenu({
   onCreditsClick,
   onHistoryClick,
   onResumeClick,
-  theme,
+  theme: mode,
   onToggleTheme,
 }) {
   const { currentUser, userProfile, credits, signOut } = useAuth();
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef(null);
+  const theme = useTheme();
+  const isCompact = useMediaQuery(theme.breakpoints.down("sm"));
+  const [anchorEl, setAnchorEl] = useState(null);
+  const open = Boolean(anchorEl);
 
-  useEffect(() => {
-    if (!open) return undefined;
-
-    function handleOutsideClick(event) {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => {
-      document.removeEventListener("mousedown", handleOutsideClick);
-    };
-  }, [open]);
+  const close = () => setAnchorEl(null);
+  const run = (fn) => () => {
+    close();
+    fn?.();
+  };
 
   if (!currentUser) {
     return (
-      <button type="button" className="account-login-btn" onClick={onLogin}>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{
-            display: "inline-block",
-            verticalAlign: "middle",
-            marginRight: "0.4rem",
-          }}
-        >
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-          <circle cx="12" cy="7" r="4" />
-        </svg>
-        <span>Log in</span>
-      </button>
+      <Button
+        variant="contained"
+        color="primary"
+        size={isCompact ? "small" : "medium"}
+        startIcon={<LoginRoundedIcon />}
+        onClick={onLogin}
+      >
+        Log in
+      </Button>
     );
   }
 
   const greetingName = userProfile?.name || currentUser.displayName || "";
-  const initialChar = (greetingName || currentUser.email || "U")
-    .charAt(0)
-    .toUpperCase();
+  const initialChar = (greetingName || currentUser.email || "U").charAt(0).toUpperCase();
 
   return (
-    <div className="account-menu-wrap" ref={menuRef}>
-      <button
-        type="button"
-        className="account-menu-trigger-premium"
-        onClick={() => setOpen((value) => !value)}
+    <>
+      <Button
+        onClick={(e) => setAnchorEl(e.currentTarget)}
+        aria-haspopup="true"
         aria-expanded={open}
+        sx={{
+          pl: 0.6,
+          pr: { xs: 0.6, sm: 1.4 },
+          py: 0.6,
+          minWidth: 0,
+          borderRadius: 999,
+          color: "text.primary",
+          border: `1px solid ${theme.ll.border}`,
+          bgcolor: alpha(theme.palette.background.paper, 0.55),
+          backdropFilter: "blur(10px)",
+          "&:hover": { borderColor: alpha(theme.palette.primary.main, 0.5) },
+        }}
       >
-        {currentUser.photoURL ? (
-          <img
-            src={currentUser.photoURL}
-            alt="profile"
-            className="avatar-img-premium"
-          />
-        ) : (
-          <div className="avatar-initial-premium">{initialChar}</div>
-        )}
-        <span className="greeting-text-premium">
-          {greetingName ? `Hello, ${greetingName}` : "Hello"}
-        </span>
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          className={`arrow-icon-premium ${open ? "open" : ""}`}
+        <Avatar
+          src={currentUser.photoURL || undefined}
+          sx={{
+            width: 30,
+            height: 30,
+            fontSize: "0.85rem",
+            background: theme.ll.gradientPrimary,
+            color: theme.palette.mode === "dark" ? "#04121c" : "#fff",
+          }}
         >
-          <path d="m6 9 6 6 6-6" />
-        </svg>
-      </button>
+          {initialChar}
+        </Avatar>
+        <Box
+          component="span"
+          sx={{
+            display: { xs: "none", sm: "block" },
+            ml: 1,
+            maxWidth: 132,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: "0.86rem",
+          }}
+        >
+          {greetingName || "Account"}
+        </Box>
+        <KeyboardArrowDownRoundedIcon
+          sx={{
+            display: { xs: "none", sm: "block" },
+            ml: 0.4,
+            fontSize: 18,
+            transition: "transform .28s cubic-bezier(.22,1,.36,1)",
+            transform: open ? "rotate(180deg)" : "rotate(0deg)",
+          }}
+        />
+      </Button>
 
-      {open ? (
-        <div className="account-menu-popover-premium">
-          <div className="popover-header-premium">
-            <p className="popover-email-premium">{currentUser.email}</p>
-          </div>
-          <div className="popover-links-premium">
-            <button
-              type="button"
-              className="popover-item-premium"
-              onClick={() => {
-                onProfileClick?.();
-                setOpen(false);
+      <Menu
+        anchorEl={anchorEl}
+        open={open}
+        onClose={close}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        slotProps={{ paper: { sx: { minWidth: 268, overflow: "visible" } } }}
+      >
+        <Box sx={{ px: 2, pt: 1.5, pb: 1.25 }}>
+          <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
+            <Avatar
+              src={currentUser.photoURL || undefined}
+              sx={{
+                width: 40,
+                height: 40,
+                background: theme.ll.gradientPrimary,
+                color: theme.palette.mode === "dark" ? "#04121c" : "#fff",
               }}
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              <span>My Profile</span>
-            </button>
+              {initialChar}
+            </Avatar>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontWeight: 700, fontSize: "0.92rem" }} noWrap>
+                {greetingName || "LeetLens user"}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                {currentUser.email}
+              </Typography>
+            </Box>
+          </Stack>
+        </Box>
 
-            <button
-              type="button"
-              className="popover-item-premium"
-              onClick={() => {
-                onCreditsClick?.();
-                setOpen(false);
-              }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="8" />
-                <line x1="12" y1="8" x2="12" y2="16" />
-                <line x1="8" y1="12" x2="16" y2="12" />
-              </svg>
-              <span>Credits: {credits} left</span>
-            </button>
+        <Divider sx={{ mb: 0.5 }} />
 
-            <button
-              type="button"
-              className="popover-item-premium"
-              onClick={() => {
-                onHistoryClick?.();
-                setOpen(false);
-              }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M3 12h3l3 8 4-16 3 8h3" />
-              </svg>
-              <span>Evaluation History</span>
-            </button>
+        <MenuItem onClick={run(onProfileClick)}>
+          <ListItemIcon>
+            <PersonRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          My profile
+        </MenuItem>
 
+        <MenuItem onClick={run(onCreditsClick)}>
+          <ListItemIcon>
+            <TokenRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", flex: 1 }}>
+            Credits
+            <Chip label={credits} size="small" color="primary" sx={{ height: 20, fontSize: "0.7rem" }} />
+          </Box>
+        </MenuItem>
 
+        <MenuItem onClick={run(onHistoryClick)}>
+          <ListItemIcon>
+            <HistoryRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          Evaluation history
+        </MenuItem>
 
-            <button
-              type="button"
-              className="popover-item-premium"
-              onClick={() => {
-                onResumeClick?.();
-                setOpen(false);
-              }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-                <polyline points="10 9 9 9 8 9" />
-              </svg>
-              <span>Resume Analyzer</span>
-            </button>
+        <MenuItem onClick={run(onResumeClick)}>
+          <ListItemIcon>
+            <DescriptionRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          Resume analyzer
+        </MenuItem>
 
-            {onToggleTheme && (
-              <button
-                type="button"
-                className="popover-item-premium"
-                onClick={() => {
-                  onToggleTheme();
-                }}
-              >
-                {theme === "dark" ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="5"/>
-                    <line x1="12" y1="1" x2="12" y2="3"/>
-                    <line x1="12" y1="21" x2="12" y2="23"/>
-                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                    <line x1="1" y1="12" x2="3" y2="12"/>
-                    <line x1="21" y1="12" x2="23" y2="12"/>
-                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-                  </svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-                  </svg>
-                )}
-                <span>Theme: {theme === "dark" ? "Dark 🌙" : "Light ☀️"}</span>
-              </button>
-            )}
+        {onToggleTheme ? (
+          <MenuItem onClick={() => onToggleTheme()}>
+            <ListItemIcon>
+              {mode === "dark" ? (
+                <LightModeRoundedIcon fontSize="small" />
+              ) : (
+                <DarkModeRoundedIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            {mode === "dark" ? "Switch to light" : "Switch to dark"}
+          </MenuItem>
+        ) : null}
 
-            <hr className="popover-divider-premium" />
+        <Divider sx={{ my: 0.5 }} />
 
-            <button
-              type="button"
-              className="popover-item-premium signout"
-              onClick={async () => {
-                await signOut();
-                setOpen(false);
-              }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-              <span>Sign out</span>
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </div>
+        <MenuItem
+          onClick={async () => {
+            close();
+            await signOut();
+          }}
+          sx={{ color: "error.main", "&:hover": { bgcolor: alpha(theme.palette.error.main, 0.12) } }}
+        >
+          <ListItemIcon>
+            <LogoutRoundedIcon fontSize="small" sx={{ color: "error.main" }} />
+          </ListItemIcon>
+          Sign out
+        </MenuItem>
+      </Menu>
+    </>
   );
 }

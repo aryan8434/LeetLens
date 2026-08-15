@@ -1,5 +1,42 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import Collapse from "@mui/material/Collapse";
+import Divider from "@mui/material/Divider";
+import Grow from "@mui/material/Grow";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
+import Typography from "@mui/material/Typography";
+import CircularProgress from "@mui/material/CircularProgress";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { alpha, useTheme } from "@mui/material/styles";
+
+import TokenRoundedIcon from "@mui/icons-material/TokenRounded";
+import RedeemRoundedIcon from "@mui/icons-material/RedeemRounded";
+import LockClockRoundedIcon from "@mui/icons-material/LockClockRounded";
+import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
+import BoltRoundedIcon from "@mui/icons-material/BoltRounded";
+import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
+import VerifiedRoundedIcon from "@mui/icons-material/VerifiedRounded";
+import ShoppingCartRoundedIcon from "@mui/icons-material/ShoppingCartRounded";
+
 import { useAuth } from "../contexts/AuthContext";
+import {
+  AnimatedNumber,
+  EmptyState,
+  GlassCard,
+  PageHeader,
+  PulseButton,
+  Reveal,
+  SectionHeading,
+} from "./ui";
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
@@ -38,6 +75,9 @@ const PURCHASE_PACKAGES = [
 
 export default function CreditsPage({ onBack }) {
   const { currentUser, credits, setCredits, userProfile } = useAuth();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
   const [timeLeft, setTimeLeft] = useState(0);
   const [claiming, setClaiming] = useState(false);
   const [purchasingKey, setPurchasingKey] = useState(null);
@@ -174,7 +214,10 @@ export default function CreditsPage({ onBack }) {
 
       // Step 2: Open Razorpay Standard Checkout Modal
       const options = {
-        key: orderData.key_id || import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_TFM4cTiksu0var",
+        key:
+          orderData.key_id ||
+          import.meta.env.VITE_RAZORPAY_KEY_ID ||
+          "rzp_test_TFM4cTiksu0var",
         amount: orderData.amount,
         currency: orderData.currency || "INR",
         name: "LeetLens",
@@ -205,10 +248,13 @@ export default function CreditsPage({ onBack }) {
             loadTransactions();
             setStatus({
               type: "success",
-              message: `🎉 Payment successful! Added ${pkg.credits} credits to your account for ₹${pkg.priceRs}. Total Balance: ${verifyData.credits} credits.`,
+              message: `🎉 Payment successful! Added ${pkg.credits} credits for ₹${pkg.priceRs}. Total balance: ${verifyData.credits} credits.`,
             });
           } catch (verifyErr) {
-            setStatus({ type: "error", message: verifyErr.message || "Payment verification failed." });
+            setStatus({
+              type: "error",
+              message: verifyErr.message || "Payment verification failed.",
+            });
           } finally {
             setPurchasingKey(null);
           }
@@ -217,9 +263,7 @@ export default function CreditsPage({ onBack }) {
           name: userProfile?.name || currentUser.displayName || "",
           email: currentUser.email || "",
         },
-        theme: {
-          color: "#38bdf8",
-        },
+        theme: { color: "#38bdf8" },
       };
 
       if (typeof window.Razorpay !== "function") {
@@ -241,269 +285,424 @@ export default function CreditsPage({ onBack }) {
     }
   };
 
+  const canClaim = timeLeft <= 0;
+
   return (
-    <div className="profile-page-container">
-      <button type="button" className="profile-back-btn" onClick={onBack}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="19" y1="12" x2="5" y2="12"></line>
-          <polyline points="12 19 5 12 12 5"></polyline>
-        </svg>
-        Back to Dashboard
-      </button>
+    <Box sx={{ width: "100%", maxWidth: 1180, mx: "auto", px: { xs: 1.5, sm: 2.5 }, pb: 6 }}>
+      <PageHeader
+        title="Credits"
+        subtitle="Claim your weekly free credits or top up instantly."
+        onBack={onBack}
+        action={
+          <Chip
+            icon={<BoltRoundedIcon />}
+            color="primary"
+            label={`${credits} available`}
+            sx={{ fontWeight: 700 }}
+          />
+        }
+      />
 
-      <div className="profile-grid">
-        <div className="profile-sidebar-card">
-          <div className="credits-icon-large">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 7v10M9 9.5a2.5 2.5 0 0 1 5 0c0 1.4-1.1 2.2-2.5 2.5s-2.5 1.1-2.5 2.5a2.5 2.5 0 0 0 5 0" />
-            </svg>
-          </div>
-          <h3>Credits Balance</h3>
-          <div className="profile-stat-box" style={{ marginTop: "1rem" }}>
-            <div className="profile-stat-val credits-glow-text">{credits}</div>
-            <div className="profile-stat-label">Credits Available</div>
-          </div>
-          <div className="sidebar-info-box">
-            <p>1 Credit = 1 AI Coach Evaluation or 1 Resume Matcher Evaluation</p>
-          </div>
-        </div>
+      <Collapse in={Boolean(status.message)}>
+        <Alert
+          severity={status.type === "success" ? "success" : "error"}
+          sx={{ mb: 2.5, animation: "ll-pop-in .35s cubic-bezier(.22,1,.36,1)" }}
+          onClose={() => setStatus({ type: "", message: "" })}
+        >
+          {status.message}
+        </Alert>
+      </Collapse>
 
-        <div className="profile-main-card">
-          <div className="credits-header-row">
-            <div>
-              <h2>Manage Credits</h2>
-              <p className="credits-subtitle-note">Claim your free weekly credits and purchase top-up packages below.</p>
-            </div>
-          </div>
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", md: "300px 1fr" },
+          gap: { xs: 2, sm: 3 },
+          alignItems: "start",
+        }}
+      >
+        {/* ---------- Balance ---------- */}
+        <Reveal direction="left">
+          <GlassCard glow sx={{ p: { xs: 2.5, sm: 3 }, textAlign: "center" }}>
+            <Box
+              sx={{
+                display: "inline-grid",
+                placeItems: "center",
+                width: 76,
+                height: 76,
+                mb: 2,
+                borderRadius: "50%",
+                color: "primary.main",
+                background: alpha(theme.palette.primary.main, 0.13),
+                border: `1px solid ${alpha(theme.palette.primary.main, 0.3)}`,
+                animation: "ll-float 5s ease-in-out infinite",
+              }}
+            >
+              <TokenRoundedIcon sx={{ fontSize: 38 }} />
+            </Box>
 
-          {status.message && (
-            <div className={`profile-status-msg ${status.type}`} style={{ marginBottom: "1.5rem" }}>
-              {status.type === "success" ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="8" x2="12" y2="12"></line>
-                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-              )}
-              {status.message}
-            </div>
-          )}
+            <Typography variant="overline" color="text.secondary">
+              Credits available
+            </Typography>
+            <Typography
+              sx={{
+                fontWeight: 800,
+                fontSize: "3.4rem",
+                lineHeight: 1.1,
+                background: theme.ll.gradientPrimary,
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+              }}
+            >
+              <AnimatedNumber value={Number(credits) || 0} />
+            </Typography>
 
-          {/* Weekly Free Claim */}
-          <div className="credits-claim-section" style={{ marginBottom: "2rem" }}>
-            <div className="credits-claim-card">
-              <div className="credits-claim-info">
-                <h3>Weekly Free Reward</h3>
-                <p>Claim 3 free credits every week to generate comprehensive AI reports. Cooldown triggers for 7 days post claim.</p>
-              </div>
+            <Divider sx={{ my: 2 }} />
 
-              <div className="credits-claim-action-box">
-                {timeLeft > 0 ? (
-                  <div className="credits-cooldown-timer">
-                    <span className="timer-lock-icon">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                      </svg>
-                    </span>
-                    <span className="timer-text">{formatCountdown(timeLeft)}</span>
-                  </div>
-                ) : null}
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+              1 credit = 1 AI coach evaluation, 1 resume match, or 1 deep-dive unlock.
+            </Typography>
+          </GlassCard>
+        </Reveal>
 
-                <button
-                  type="button"
-                  className={`credits-claim-btn ${timeLeft > 0 ? "locked" : ""}`}
-                  disabled={timeLeft > 0 || claiming || purchasingKey !== null}
-                  onClick={handleClaimFreeCredits}
-                >
-                  {claiming ? "Claiming..." : timeLeft > 0 ? "Claim Locked" : "Get Free 3 Credits"}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <hr className="profile-section-divider" style={{ margin: "2rem 0" }} />
-
-          <div style={{ marginTop: "1.5rem", marginBottom: "1.5rem" }}>
-            <h3>Buy Credits</h3>
-            <p className="credits-subtitle-note">Select a credit top-up package to pay securely via Razorpay.</p>
-          </div>
-
-          {/* Pricing Grid */}
-          <div className="purchase-tier-grid">
-            {PURCHASE_PACKAGES.map((pkg) => {
-              const isBuying = purchasingKey === pkg.key;
-              return (
-                <div key={pkg.key} className={`tier-card ${pkg.badge ? "highlighted-tier" : ""}`}>
-                  {pkg.badge && <span className="tier-badge">{pkg.badge}</span>}
-                  <div className="tier-header">
-                    <h3 className="tier-name">{pkg.name}</h3>
-                    <div className="tier-price-wrap">
-                      <span className="tier-currency">₹</span>
-                      <span className="tier-price">{pkg.priceRs}</span>
-                    </div>
-                    <span className="tier-credits">{pkg.credits} Credits</span>
-                    <span className="tier-unit-price">{pkg.perCredit}</span>
-                  </div>
-                  <p className="tier-desc">{pkg.description}</p>
-                  <button
-                    type="button"
-                    className="tier-buy-btn"
-                    disabled={purchasingKey !== null}
-                    onClick={() => handlePurchaseCredits(pkg)}
-                    style={{
-                      marginTop: "auto",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "8px",
-                      width: "100%",
-                      padding: "12px",
-                      background: isBuying ? "#475569" : pkg.badge === "MOST POPULAR" ? "linear-gradient(135deg, #38bdf8, #3b82f6)" : "linear-gradient(135deg, #0284c7, #2563eb)",
-                      color: "white",
-                      fontWeight: "700",
-                      fontSize: "0.95rem",
-                      border: "none",
-                      borderRadius: "10px",
-                      boxShadow: isBuying ? "none" : "0 4px 15px rgba(2, 132, 199, 0.35)",
-                      cursor: isBuying ? "not-allowed" : "pointer",
-                      transition: "all 0.2s ease"
+        {/* ---------- Main column ---------- */}
+        <Stack spacing={{ xs: 2, sm: 3 }}>
+          {/* Weekly free claim */}
+          <Reveal direction="right" delay={70}>
+            <GlassCard accent={theme.palette.success.main} sx={{ p: { xs: 2, sm: 3 } }}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between" }}>
+                <Stack direction="row" spacing={1.75} sx={{ alignItems: "flex-start" }}>
+                  <Box
+                    sx={{
+                      display: "grid",
+                      placeItems: "center",
+                      width: 46,
+                      height: 46,
+                      flexShrink: 0,
+                      borderRadius: 2.5,
+                      color: "success.main",
+                      background: alpha(theme.palette.success.main, 0.13),
+                      border: `1px solid ${alpha(theme.palette.success.main, 0.3)}`,
                     }}
-                    onMouseEnter={(e) => { if (!isBuying) e.currentTarget.style.transform = "translateY(-2px)"; }}
-                    onMouseLeave={(e) => { if (!isBuying) e.currentTarget.style.transform = "translateY(0)"; }}
                   >
-                    <span>{isBuying ? "Processing..." : `⚡ Pay ₹${pkg.priceRs} via Razorpay`}</span>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+                    <RedeemRoundedIcon />
+                  </Box>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontSize: "1.1rem" }}>
+                      Weekly free reward
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                      Claim 3 free credits every week. A 7-day cooldown starts after each claim.
+                    </Typography>
+                  </Box>
+                </Stack>
 
-          {/* Transaction History Section */}
-          <hr className="profile-section-divider" style={{ margin: "3rem 0 2rem 0" }} />
+                <Stack spacing={1} sx={{ alignItems: { xs: "stretch", sm: "flex-end" }, flexShrink: 0 }}>
+                  {!canClaim ? (
+                    <Chip
+                      icon={<LockClockRoundedIcon />}
+                      label={formatCountdown(timeLeft)}
+                      variant="outlined"
+                      sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}
+                    />
+                  ) : null}
+                  <PulseButton
+                    color="success"
+                    disabled={!canClaim || claiming || purchasingKey !== null}
+                    onClick={handleClaimFreeCredits}
+                    gradient={`linear-gradient(135deg, ${theme.palette.success.main}, #16a34a)`}
+                    sx={{ minWidth: 190 }}
+                  >
+                    {claiming ? (
+                      <CircularProgress size={20} color="inherit" />
+                    ) : canClaim ? (
+                      "Claim 3 free credits"
+                    ) : (
+                      "Claim locked"
+                    )}
+                  </PulseButton>
+                </Stack>
+              </Stack>
+            </GlassCard>
+          </Reveal>
 
-          <div className="transaction-history-section">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: "1rem" }}>
-              <div>
-                <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "white", margin: 0, fontSize: "1.3rem" }}>
-                  <span>💳</span> Payment & Transaction History
-                </h3>
-                <p className="credits-subtitle-note" style={{ margin: "0.25rem 0 0 0" }}>
-                  All credit top-ups and Razorpay transactions processed on your account.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={loadTransactions}
-                style={{
-                  background: "rgba(255, 255, 255, 0.08)",
-                  border: "1px solid rgba(255, 255, 255, 0.15)",
-                  color: "white",
-                  padding: "6px 14px",
-                  borderRadius: "8px",
-                  fontSize: "0.85rem",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  transition: "all 0.2s"
+          {/* Packages */}
+          <Reveal delay={120}>
+            <GlassCard interactive={false} sx={{ p: { xs: 2, sm: 3 } }}>
+              <SectionHeading
+                icon={<ShoppingCartRoundedIcon />}
+                title="Buy credits"
+                subtitle="Secure checkout via Razorpay — UPI, cards, netbanking."
+              />
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: { xs: "1fr", sm: "repeat(auto-fit, minmax(220px, 1fr))" },
+                  gap: 2,
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255, 255, 255, 0.15)"}
-                onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)"}
               >
-                🔄 Refresh
-              </button>
-            </div>
+                {PURCHASE_PACKAGES.map((pkg, index) => {
+                  const isBuying = purchasingKey === pkg.key;
+                  const highlighted = Boolean(pkg.badge);
+                  const accent = highlighted ? theme.palette.primary.main : theme.palette.info.main;
 
-            {loadingTx ? (
-              <div style={{ padding: "2.5rem", textAlign: "center", background: "rgba(15, 23, 42, 0.4)", borderRadius: "16px", border: "1px solid rgba(255, 255, 255, 0.05)", color: "#94a3b8" }}>
-                Loading transaction history...
-              </div>
-            ) : transactions.length === 0 ? (
-              <div style={{
-                padding: "3rem 2rem",
-                textAlign: "center",
-                background: "rgba(15, 23, 42, 0.45)",
-                backdropFilter: "blur(12px)",
-                borderRadius: "16px",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                color: "#64748b"
-              }}>
-                <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>🪙</div>
-                <h4 style={{ color: "#cbd5e1", margin: "0 0 0.5rem 0", fontSize: "1.1rem" }}>No Transactions Yet</h4>
-                <p style={{ margin: 0, fontSize: "0.9rem" }}>When you purchase credits via Razorpay above, your full receipt history and added balance will appear here instantly.</p>
-              </div>
-            ) : (
-              <div style={{
-                overflowX: "auto",
-                background: "rgba(15, 23, 42, 0.6)",
-                backdropFilter: "blur(16px)",
-                borderRadius: "16px",
-                border: "1px solid rgba(167, 139, 250, 0.2)",
-                boxShadow: "0 10px 30px rgba(0,0,0,0.3)"
-              }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.1)", background: "rgba(255, 255, 255, 0.03)" }}>
-                      <th style={{ padding: "1rem 1.25rem", color: "#94a3b8", fontSize: "0.85rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.05em" }}>Date</th>
-                      <th style={{ padding: "1rem 1.25rem", color: "#94a3b8", fontSize: "0.85rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.05em" }}>Package / Credits</th>
-                      <th style={{ padding: "1rem 1.25rem", color: "#94a3b8", fontSize: "0.85rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.05em" }}>Amount Paid</th>
-                      <th style={{ padding: "1rem 1.25rem", color: "#94a3b8", fontSize: "0.85rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.05em" }}>Payment Method</th>
-                      <th style={{ padding: "1rem 1.25rem", color: "#94a3b8", fontSize: "0.85rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {transactions.map((tx) => {
-                      const pkgName = PURCHASE_PACKAGES.find((p) => p.key === tx.packageKey)?.name || "Credits Package";
-                      return (
-                        <tr key={tx.id} style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.05)", transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.02)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-                          <td style={{ padding: "1rem 1.25rem", color: "#e2e8f0", fontSize: "0.92rem", whiteSpace: "nowrap" }}>{tx.dateStr}</td>
-                          <td style={{ padding: "1rem 1.25rem" }}>
-                            <div style={{ color: "white", fontWeight: "700", fontSize: "0.95rem", display: "flex", alignItems: "center", gap: "6px" }}>
-                              <span style={{ color: "#38bdf8" }}>+{tx.credits} Credits</span>
-                            </div>
-                            <div style={{ color: "#64748b", fontSize: "0.8rem", marginTop: "2px" }}>{pkgName}</div>
-                          </td>
-                          <td style={{ padding: "1rem 1.25rem", color: "#34d399", fontWeight: "700", fontSize: "1rem" }}>₹{tx.amountRs}</td>
-                          <td style={{ padding: "1rem 1.25rem" }}>
-                            <div style={{ color: "#cbd5e1", fontSize: "0.88rem", display: "flex", alignItems: "center", gap: "6px" }}>
-                              <span>🛡️</span> {tx.method}
-                            </div>
-                            {tx.paymentId && tx.paymentId !== "Completed Transaction" && (
-                              <div style={{ color: "#64748b", fontSize: "0.75rem", marginTop: "2px", fontFamily: "monospace" }}>ID: {tx.paymentId}</div>
-                            )}
-                          </td>
-                          <td style={{ padding: "1rem 1.25rem", textAlign: "right" }}>
-                            <span style={{
-                              display: "inline-block",
-                              padding: "4px 12px",
-                              borderRadius: "20px",
-                              fontSize: "0.78rem",
-                              fontWeight: "700",
-                              background: "rgba(16, 185, 129, 0.15)",
-                              color: "#34d399",
-                              border: "1px solid rgba(16, 185, 129, 0.4)",
-                              boxShadow: "0 0 10px rgba(16, 185, 129, 0.1)"
-                            }}>
-                              ✓ {tx.status}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+                  return (
+                    <Grow in timeout={480 + index * 130} key={pkg.key}>
+                      <Box
+                        sx={{
+                          position: "relative",
+                          display: "flex",
+                          flexDirection: "column",
+                          p: 2.5,
+                          pt: highlighted ? 3.25 : 2.5,
+                          borderRadius: 4,
+                          background: alpha(accent, highlighted ? 0.1 : 0.05),
+                          border: `1px solid ${alpha(accent, highlighted ? 0.42 : 0.2)}`,
+                          boxShadow: highlighted
+                            ? `0 0 34px ${alpha(accent, 0.22)}`
+                            : "none",
+                          transition:
+                            "transform .32s cubic-bezier(.22,1,.36,1), box-shadow .32s ease",
+                          "&:hover": {
+                            transform: "translateY(-6px)",
+                            boxShadow: `0 18px 44px ${alpha(accent, 0.28)}`,
+                          },
+                        }}
+                      >
+                        {pkg.badge ? (
+                          <Chip
+                            label={pkg.badge}
+                            size="small"
+                            sx={{
+                              position: "absolute",
+                              top: -11,
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              fontSize: "0.62rem",
+                              height: 22,
+                              fontWeight: 800,
+                              background: theme.ll.gradientPrimary,
+                              color: theme.palette.mode === "dark" ? "#04121c" : "#fff",
+                            }}
+                          />
+                        ) : null}
+
+                        <Typography variant="subtitle1" sx={{ mb: 0.5 }}>
+                          {pkg.name}
+                        </Typography>
+
+                        <Stack direction="row" spacing={0.5} sx={{ alignItems: "baseline" }}>
+                          <Typography sx={{ fontSize: "1.1rem", color: accent, fontWeight: 700 }}>
+                            ₹
+                          </Typography>
+                          <Typography sx={{ fontSize: "2.4rem", fontWeight: 800, lineHeight: 1 }}>
+                            {pkg.priceRs}
+                          </Typography>
+                        </Stack>
+
+                        <Stack direction="row" spacing={1} sx={{ mt: 1, mb: 1.5 }}>
+                          <Chip
+                            label={`${pkg.credits} credits`}
+                            size="small"
+                            sx={{ bgcolor: alpha(accent, 0.16), color: accent, fontSize: "0.72rem" }}
+                          />
+                          <Chip
+                            label={pkg.perCredit}
+                            size="small"
+                            variant="outlined"
+                            sx={{ fontSize: "0.72rem" }}
+                          />
+                        </Stack>
+
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ mb: 2.5, flexGrow: 1, lineHeight: 1.6 }}
+                        >
+                          {pkg.description}
+                        </Typography>
+
+                        <PulseButton
+                          fullWidth
+                          disabled={purchasingKey !== null}
+                          onClick={() => handlePurchaseCredits(pkg)}
+                          startIcon={!isBuying ? <BoltRoundedIcon /> : null}
+                          gradient={
+                            highlighted
+                              ? theme.ll.gradientPrimary
+                              : `linear-gradient(135deg, ${theme.palette.info.main}, ${theme.palette.primary.main})`
+                          }
+                        >
+                          {isBuying ? (
+                            <CircularProgress size={20} color="inherit" />
+                          ) : (
+                            `Pay ₹${pkg.priceRs}`
+                          )}
+                        </PulseButton>
+                      </Box>
+                    </Grow>
+                  );
+                })}
+              </Box>
+            </GlassCard>
+          </Reveal>
+
+          {/* Transactions */}
+          <Reveal delay={170}>
+            <GlassCard interactive={false} sx={{ p: { xs: 2, sm: 3 } }}>
+              <SectionHeading
+                icon={<ReceiptLongRoundedIcon />}
+                title="Payment history"
+                subtitle="Every credit top-up processed on your account."
+                action={
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<RefreshRoundedIcon />}
+                    onClick={loadTransactions}
+                    disabled={loadingTx}
+                  >
+                    Refresh
+                  </Button>
+                }
+              />
+
+              {loadingTx ? (
+                <Stack spacing={1.5} sx={{ alignItems: "center", py: 5 }}>
+                  <CircularProgress size={30} />
+                  <Typography variant="body2" color="text.secondary">
+                    Loading transaction history…
+                  </Typography>
+                </Stack>
+              ) : transactions.length === 0 ? (
+                <EmptyState
+                  icon={<ReceiptLongRoundedIcon sx={{ fontSize: 44 }} />}
+                  title="No transactions yet"
+                  description="Once you buy credits above, your receipts and balance changes appear here instantly."
+                />
+              ) : isMobile ? (
+                /* Card list on phones — tables don't work at 375px */
+                <Stack spacing={1.5}>
+                  {transactions.map((tx) => {
+                    const pkgName =
+                      PURCHASE_PACKAGES.find((p) => p.key === tx.packageKey)?.name ||
+                      "Credits package";
+                    return (
+                      <Box
+                        key={tx.id}
+                        sx={{
+                          p: 2,
+                          borderRadius: 3,
+                          border: `1px solid ${theme.ll.border}`,
+                          background: alpha(theme.palette.background.paper, 0.4),
+                        }}
+                      >
+                        <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+                          <Typography sx={{ fontWeight: 800, color: "primary.main" }}>
+                            +{tx.credits} credits
+                          </Typography>
+                          <Typography sx={{ fontWeight: 800, color: "success.main" }}>
+                            ₹{tx.amountRs}
+                          </Typography>
+                        </Stack>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          {pkgName} · {tx.dateStr}
+                        </Typography>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: "center", mt: 1.25 }}>
+                          <Chip
+                            size="small"
+                            icon={<VerifiedRoundedIcon sx={{ fontSize: 15 }} />}
+                            label={tx.status}
+                            color="success"
+                            variant="outlined"
+                            sx={{ height: 22, fontSize: "0.7rem" }}
+                          />
+                          <Typography variant="caption" color="text.disabled" noWrap>
+                            {tx.method}
+                          </Typography>
+                        </Stack>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              ) : (
+                <TableContainer
+                  sx={{
+                    borderRadius: 3,
+                    border: `1px solid ${theme.ll.border}`,
+                    overflowX: "auto",
+                  }}
+                >
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
+                        <TableCell>Date</TableCell>
+                        <TableCell>Package / credits</TableCell>
+                        <TableCell>Amount</TableCell>
+                        <TableCell>Method</TableCell>
+                        <TableCell align="right">Status</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {transactions.map((tx) => {
+                        const pkgName =
+                          PURCHASE_PACKAGES.find((p) => p.key === tx.packageKey)?.name ||
+                          "Credits package";
+                        return (
+                          <TableRow
+                            key={tx.id}
+                            sx={{
+                              transition: "background-color .2s ease",
+                              "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.05) },
+                            }}
+                          >
+                            <TableCell sx={{ whiteSpace: "nowrap", py: 1.5 }}>
+                              {tx.dateStr}
+                            </TableCell>
+                            <TableCell sx={{ py: 1.5 }}>
+                              <Typography sx={{ fontWeight: 700, color: "primary.main", fontSize: "0.9rem" }}>
+                                +{tx.credits} credits
+                              </Typography>
+                              <Typography variant="caption" color="text.disabled">
+                                {pkgName}
+                              </Typography>
+                            </TableCell>
+                            <TableCell sx={{ py: 1.5, fontWeight: 800, color: "success.main" }}>
+                              ₹{tx.amountRs}
+                            </TableCell>
+                            <TableCell sx={{ py: 1.5 }}>
+                              <Typography variant="body2">{tx.method}</Typography>
+                              {tx.paymentId && tx.paymentId !== "Completed Transaction" ? (
+                                <Typography
+                                  variant="caption"
+                                  color="text.disabled"
+                                  sx={{ fontFamily: "monospace" }}
+                                >
+                                  {tx.paymentId}
+                                </Typography>
+                              ) : null}
+                            </TableCell>
+                            <TableCell align="right" sx={{ py: 1.5 }}>
+                              <Chip
+                                size="small"
+                                icon={<VerifiedRoundedIcon sx={{ fontSize: 15 }} />}
+                                label={tx.status}
+                                color="success"
+                                variant="outlined"
+                              />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </GlassCard>
+          </Reveal>
+        </Stack>
+      </Box>
+    </Box>
   );
 }

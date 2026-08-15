@@ -1,5 +1,40 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import Alert from "@mui/material/Alert";
+import Avatar from "@mui/material/Avatar";
+import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
+import Collapse from "@mui/material/Collapse";
+import Divider from "@mui/material/Divider";
+import Grow from "@mui/material/Grow";
+import InputAdornment from "@mui/material/InputAdornment";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
+import CircularProgress from "@mui/material/CircularProgress";
+import IconButton from "@mui/material/IconButton";
+import { alpha, useTheme } from "@mui/material/styles";
+
+import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
+import CakeRoundedIcon from "@mui/icons-material/CakeRounded";
+import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
+import NumbersRoundedIcon from "@mui/icons-material/NumbersRounded";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
+import BoltRoundedIcon from "@mui/icons-material/BoltRounded";
+import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
+import ShoppingCartRoundedIcon from "@mui/icons-material/ShoppingCartRounded";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
+
 import { useAuth } from "../contexts/AuthContext";
+import {
+  AnimatedNumber,
+  GlassCard,
+  PageHeader,
+  PulseButton,
+  Reveal,
+  SectionHeading,
+} from "./ui";
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
@@ -37,14 +72,10 @@ const PURCHASE_PACKAGES = [
 ];
 
 export default function ProfilePage({ onBack }) {
-  const {
-    userProfile,
-    updateProfileData,
-    credits,
-    setCredits,
-    currentUser,
-    changePassword,
-  } = useAuth();
+  const { userProfile, updateProfileData, credits, setCredits, currentUser, changePassword } =
+    useAuth();
+  const theme = useTheme();
+
   const [name, setName] = useState("");
   const [dob, setDob] = useState("");
   const [age, setAge] = useState("");
@@ -53,6 +84,7 @@ export default function ProfilePage({ onBack }) {
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [pwdLoading, setPwdLoading] = useState(false);
   const [pwdStatus, setPwdStatus] = useState({ type: "", message: "" });
 
@@ -90,10 +122,7 @@ export default function ProfilePage({ onBack }) {
       });
       setStatus({ type: "success", message: "Profile updated successfully!" });
     } catch (err) {
-      setStatus({
-        type: "error",
-        message: err.message || "Failed to update profile.",
-      });
+      setStatus({ type: "error", message: err.message || "Failed to update profile." });
     } finally {
       setLoading(false);
     }
@@ -110,10 +139,7 @@ export default function ProfilePage({ onBack }) {
       return;
     }
     if (newPassword.length < 6) {
-      setPwdStatus({
-        type: "error",
-        message: "Password should be at least 6 characters.",
-      });
+      setPwdStatus({ type: "error", message: "Password should be at least 6 characters." });
       return;
     }
 
@@ -122,10 +148,7 @@ export default function ProfilePage({ onBack }) {
 
     try {
       await changePassword(newPassword);
-      setPwdStatus({
-        type: "success",
-        message: "Password updated successfully!",
-      });
+      setPwdStatus({ type: "success", message: "Password updated successfully!" });
       setNewPassword("");
       setConfirmPassword("");
     } catch (err) {
@@ -170,7 +193,10 @@ export default function ProfilePage({ onBack }) {
 
       // Step 2: Open Razorpay Modal
       const options = {
-        key: orderData.key_id || import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_TFM4cTiksu0var",
+        key:
+          orderData.key_id ||
+          import.meta.env.VITE_RAZORPAY_KEY_ID ||
+          "rzp_test_TFM4cTiksu0var",
         amount: orderData.amount,
         currency: orderData.currency || "INR",
         name: "LeetLens",
@@ -200,10 +226,13 @@ export default function ProfilePage({ onBack }) {
             setCredits(verifyData.credits);
             setCreditStatus({
               type: "success",
-              message: `🎉 Payment successful! Added ${pkg.credits} credits to your account for ₹${pkg.priceRs}. Total Balance: ${verifyData.credits} credits.`,
+              message: `🎉 Payment successful! Added ${pkg.credits} credits for ₹${pkg.priceRs}. Total balance: ${verifyData.credits} credits.`,
             });
           } catch (verifyErr) {
-            setCreditStatus({ type: "error", message: verifyErr.message || "Payment verification failed." });
+            setCreditStatus({
+              type: "error",
+              message: verifyErr.message || "Payment verification failed.",
+            });
           } finally {
             setPurchasingKey(null);
           }
@@ -212,9 +241,7 @@ export default function ProfilePage({ onBack }) {
           name: userProfile?.name || currentUser.displayName || "",
           email: currentUser.email || "",
         },
-        theme: {
-          color: "#38bdf8",
-        },
+        theme: { color: "#38bdf8" },
       };
 
       if (typeof window.Razorpay !== "function") {
@@ -236,283 +263,431 @@ export default function ProfilePage({ onBack }) {
     }
   };
 
-  const getInitials = (userName) => {
-    if (!userName) return "U";
-    return userName.charAt(0).toUpperCase();
-  };
+  const initial = (name || userProfile?.email || "U").charAt(0).toUpperCase();
 
   return (
-    <div className="profile-page-container">
-      <button type="button" className="profile-back-btn" onClick={onBack}>
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <line x1="19" y1="12" x2="5" y2="12"></line>
-          <polyline points="12 19 5 12 12 5"></polyline>
-        </svg>
-        Back to Dashboard
-      </button>
+    <Box sx={{ width: "100%", maxWidth: 1180, mx: "auto", px: { xs: 1.5, sm: 2.5 }, pb: 6 }}>
+      <PageHeader
+        title="My profile"
+        subtitle="Keep your details current for recruiter-facing evaluations."
+        onBack={onBack}
+      />
 
-      <div className="profile-grid">
-        <div className="profile-sidebar-card">
-          <div className="profile-avatar-large">
-            {getInitials(name || userProfile?.email)}
-          </div>
-          <h3>{name || "User Profile"}</h3>
-          <p className="profile-email">{userProfile?.email}</p>
-
-          <div className="profile-stat-box">
-            <div className="profile-stat-label">Available Search Credits</div>
-            <div className="profile-stat-val credits-glow-text">{credits}</div>
-          </div>
-        </div>
-
-        <div className="profile-main-card">
-          <h2>Edit Profile</h2>
-          <p className="section-desc">
-            Keep your details up-to-date for recruiter evaluations and dashboard customizations.
-          </p>
-
-          <form onSubmit={handleSubmit} className="profile-editor-form">
-            <div className="profile-form-row">
-              <div className="profile-form-group">
-                <label htmlFor="profile-name">Full Name</label>
-                <input
-                  id="profile-name"
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Enter your name"
-                  required
-                />
-              </div>
-
-              <div className="profile-form-group">
-                <label htmlFor="profile-dob">Date of Birth</label>
-                <input
-                  id="profile-dob"
-                  type="date"
-                  value={dob}
-                  onChange={(e) => setDob(e.target.value)}
-                  placeholder="YYYY-MM-DD"
-                />
-              </div>
-            </div>
-
-            <div className="profile-form-row">
-              <div className="profile-form-group">
-                <label htmlFor="profile-age">Age</label>
-                <input
-                  id="profile-age"
-                  type="number"
-                  min="0"
-                  max="120"
-                  value={age}
-                  onChange={(e) => setAge(e.target.value)}
-                  placeholder="Enter age"
-                />
-              </div>
-
-              <div className="profile-form-group">
-                <label htmlFor="profile-location">Location</label>
-                <input
-                  id="profile-location"
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="City, Country"
-                />
-              </div>
-            </div>
-
-            <div className="profile-form-group">
-              <label htmlFor="profile-bio">Bio</label>
-              <textarea
-                id="profile-bio"
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                placeholder="Tell us about yourself (DSA interests, goals, etc.)"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="profile-save-btn"
-              disabled={loading}
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", md: "300px 1fr" },
+          gap: { xs: 2, sm: 3 },
+          alignItems: "start",
+        }}
+      >
+        {/* ---------- Identity card ---------- */}
+        <Reveal direction="left">
+          <GlassCard glow sx={{ p: { xs: 2.5, sm: 3 }, textAlign: "center" }}>
+            <Avatar
+              src={currentUser?.photoURL || undefined}
+              sx={{
+                width: 92,
+                height: 92,
+                mx: "auto",
+                mb: 2,
+                fontSize: "2.4rem",
+                background: theme.ll.gradientPrimary,
+                color: theme.palette.mode === "dark" ? "#04121c" : "#fff",
+                boxShadow: theme.ll.glow.primary,
+                transition: "transform .4s cubic-bezier(.22,1,.36,1)",
+                "&:hover": { transform: "scale(1.06) rotate(-4deg)" },
+              }}
             >
-              {loading ? "Saving Changes..." : "Save Changes"}
-            </button>
-          </form>
+              {initial}
+            </Avatar>
 
-          {status.message && (
-            <div className={`profile-status-msg ${status.type}`}>
-              {status.type === "success" ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="8" x2="12" y2="12"></line>
-                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-              )}
-              {status.message}
-            </div>
-          )}
+            <Typography variant="h6" noWrap>
+              {name || "User profile"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" noWrap sx={{ mb: 2 }}>
+              {userProfile?.email}
+            </Typography>
 
-          <hr className="profile-section-divider" style={{ margin: "2rem 0" }} />
+            <Divider sx={{ mb: 2 }} />
 
-          {/* Credits Purchase Section inside Profile */}
-          <div className="profile-credits-purchase-section">
-            <h3>Purchase Credits (Razorpay Checkout)</h3>
-            <p className="section-desc" style={{ marginBottom: "1rem" }}>
-              Top up your evaluation credits instantly with Razorpay standard payment checkout.
-            </p>
+            <Typography variant="overline" color="text.secondary">
+              Available credits
+            </Typography>
+            <Typography
+              sx={{
+                fontWeight: 800,
+                fontSize: "2.8rem",
+                lineHeight: 1.1,
+                background: theme.ll.gradientPrimary,
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+              }}
+            >
+              <AnimatedNumber value={Number(credits) || 0} />
+            </Typography>
 
-            {creditStatus.message && (
-              <div className={`profile-status-msg ${creditStatus.type}`} style={{ marginBottom: "1rem" }}>
-                {creditStatus.type === "success" ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                  </svg>
-                ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                  </svg>
-                )}
-                {creditStatus.message}
-              </div>
-            )}
+            {location ? (
+              <Chip
+                icon={<PlaceRoundedIcon />}
+                label={location}
+                size="small"
+                variant="outlined"
+                sx={{ mt: 1.5 }}
+              />
+            ) : null}
+          </GlassCard>
+        </Reveal>
 
-            <div className="purchase-tier-grid">
-              {PURCHASE_PACKAGES.map((pkg) => {
-                const isBuying = purchasingKey === pkg.key;
-                return (
-                  <div key={pkg.key} className={`tier-card ${pkg.badge ? "highlighted-tier" : ""}`}>
-                    {pkg.badge && <span className="tier-badge">{pkg.badge}</span>}
-                    <div className="tier-header">
-                      <h3 className="tier-name">{pkg.name}</h3>
-                      <div className="tier-price-wrap">
-                        <span className="tier-currency">₹</span>
-                        <span className="tier-price">{pkg.priceRs}</span>
-                      </div>
-                      <span className="tier-credits">{pkg.credits} Credits</span>
-                      <span className="tier-unit-price">{pkg.perCredit}</span>
-                    </div>
-                    <p className="tier-desc">{pkg.description}</p>
-                    <button
-                      type="button"
-                      className="tier-buy-btn"
-                      disabled={purchasingKey !== null}
-                      onClick={() => handlePurchaseCredits(pkg)}
-                    >
-                      {isBuying ? "Processing..." : `Pay ₹${pkg.priceRs}`}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+        {/* ---------- Main column ---------- */}
+        <Stack spacing={{ xs: 2, sm: 3 }}>
+          {/* Edit profile */}
+          <Reveal direction="right" delay={70}>
+            <GlassCard interactive={false} sx={{ p: { xs: 2, sm: 3 } }}>
+              <SectionHeading
+                icon={<PersonRoundedIcon />}
+                title="Edit profile"
+                subtitle="These details personalise your dashboard and reports."
+              />
 
-          <hr className="profile-section-divider" style={{ margin: "2rem 0" }} />
+              <Box component="form" onSubmit={handleSubmit}>
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                    gap: 2,
+                  }}
+                >
+                  <TextField
+                    label="Full name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Enter your name"
+                    required
+                    fullWidth
+                    slotProps={{
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <PersonRoundedIcon fontSize="small" sx={{ color: "text.disabled" }} />
+                          </InputAdornment>
+                        ),
+                      },
+                    }}
+                  />
 
-          <div className="profile-security-section">
-            <h3>Change Password</h3>
-            {isGoogleUser ? (
-              <p className="profile-security-note">
-                Password changes are managed through Google because your account
-                is authenticated with Google.
-              </p>
-            ) : (
-              <form
-                onSubmit={handlePasswordChange}
-                className="profile-editor-form"
+                  <TextField
+                    label="Date of birth"
+                    type="date"
+                    value={dob}
+                    onChange={(e) => setDob(e.target.value)}
+                    fullWidth
+                    slotProps={{
+                      inputLabel: { shrink: true },
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <CakeRoundedIcon fontSize="small" sx={{ color: "text.disabled" }} />
+                          </InputAdornment>
+                        ),
+                      },
+                    }}
+                  />
+
+                  <TextField
+                    label="Age"
+                    type="number"
+                    value={age}
+                    onChange={(e) => setAge(e.target.value)}
+                    placeholder="Enter age"
+                    fullWidth
+                    slotProps={{
+                      htmlInput: { min: 0, max: 120 },
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <NumbersRoundedIcon fontSize="small" sx={{ color: "text.disabled" }} />
+                          </InputAdornment>
+                        ),
+                      },
+                    }}
+                  />
+
+                  <TextField
+                    label="Location"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="City, Country"
+                    fullWidth
+                    slotProps={{
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <PlaceRoundedIcon fontSize="small" sx={{ color: "text.disabled" }} />
+                          </InputAdornment>
+                        ),
+                      },
+                    }}
+                  />
+                </Box>
+
+                <TextField
+                  label="Bio"
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="Tell us about yourself — DSA interests, target companies, goals…"
+                  multiline
+                  minRows={3}
+                  fullWidth
+                  sx={{ mt: 2 }}
+                />
+
+                <Collapse in={Boolean(status.message)}>
+                  <Alert
+                    severity={status.type === "success" ? "success" : "error"}
+                    sx={{ mt: 2, animation: "ll-pop-in .35s cubic-bezier(.22,1,.36,1)" }}
+                    onClose={() => setStatus({ type: "", message: "" })}
+                  >
+                    {status.message}
+                  </Alert>
+                </Collapse>
+
+                <PulseButton
+                  type="submit"
+                  size="large"
+                  disabled={loading}
+                  startIcon={!loading ? <SaveRoundedIcon /> : null}
+                  gradient={theme.ll.gradientPrimary}
+                  sx={{ mt: 2.5, width: { xs: "100%", sm: "auto" }, minWidth: 200 }}
+                >
+                  {loading ? <CircularProgress size={20} color="inherit" /> : "Save changes"}
+                </PulseButton>
+              </Box>
+            </GlassCard>
+          </Reveal>
+
+          {/* Buy credits */}
+          <Reveal delay={120}>
+            <GlassCard interactive={false} sx={{ p: { xs: 2, sm: 3 } }}>
+              <SectionHeading
+                icon={<ShoppingCartRoundedIcon />}
+                title="Purchase credits"
+                subtitle="Top up instantly with Razorpay checkout."
+              />
+
+              <Collapse in={Boolean(creditStatus.message)}>
+                <Alert
+                  severity={creditStatus.type === "success" ? "success" : "error"}
+                  sx={{ mb: 2 }}
+                  onClose={() => setCreditStatus({ type: "", message: "" })}
+                >
+                  {creditStatus.message}
+                </Alert>
+              </Collapse>
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: { xs: "1fr", sm: "repeat(auto-fit, minmax(210px, 1fr))" },
+                  gap: 2,
+                }}
               >
-                <div className="profile-form-row">
-                  <div className="profile-form-group">
-                    <label htmlFor="profile-new-pwd">New Password</label>
-                    <input
-                      id="profile-new-pwd"
-                      type="password"
+                {PURCHASE_PACKAGES.map((pkg, index) => {
+                  const isBuying = purchasingKey === pkg.key;
+                  const highlighted = Boolean(pkg.badge);
+                  const accent = highlighted ? theme.palette.primary.main : theme.palette.info.main;
+
+                  return (
+                    <Grow in timeout={460 + index * 120} key={pkg.key}>
+                      <Box
+                        sx={{
+                          position: "relative",
+                          display: "flex",
+                          flexDirection: "column",
+                          p: 2.25,
+                          pt: highlighted ? 3 : 2.25,
+                          borderRadius: 4,
+                          background: alpha(accent, highlighted ? 0.1 : 0.05),
+                          border: `1px solid ${alpha(accent, highlighted ? 0.4 : 0.2)}`,
+                          transition: "transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s ease",
+                          "&:hover": {
+                            transform: "translateY(-5px)",
+                            boxShadow: `0 16px 40px ${alpha(accent, 0.26)}`,
+                          },
+                        }}
+                      >
+                        {pkg.badge ? (
+                          <Chip
+                            label={pkg.badge}
+                            size="small"
+                            sx={{
+                              position: "absolute",
+                              top: -11,
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              fontSize: "0.6rem",
+                              height: 21,
+                              fontWeight: 800,
+                              background: theme.ll.gradientPrimary,
+                              color: theme.palette.mode === "dark" ? "#04121c" : "#fff",
+                            }}
+                          />
+                        ) : null}
+
+                        <Typography variant="subtitle2">{pkg.name}</Typography>
+                        <Typography sx={{ fontSize: "2rem", fontWeight: 800, lineHeight: 1.2 }}>
+                          ₹{pkg.priceRs}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: accent, fontWeight: 700, mb: 1.5 }}>
+                          {pkg.credits} credits · {pkg.perCredit}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ flexGrow: 1, mb: 2, lineHeight: 1.55, fontSize: "0.82rem" }}
+                        >
+                          {pkg.description}
+                        </Typography>
+
+                        <PulseButton
+                          fullWidth
+                          size="small"
+                          disabled={purchasingKey !== null}
+                          onClick={() => handlePurchaseCredits(pkg)}
+                          startIcon={!isBuying ? <BoltRoundedIcon /> : null}
+                          gradient={
+                            highlighted
+                              ? theme.ll.gradientPrimary
+                              : `linear-gradient(135deg, ${theme.palette.info.main}, ${theme.palette.primary.main})`
+                          }
+                        >
+                          {isBuying ? (
+                            <CircularProgress size={18} color="inherit" />
+                          ) : (
+                            `Pay ₹${pkg.priceRs}`
+                          )}
+                        </PulseButton>
+                      </Box>
+                    </Grow>
+                  );
+                })}
+              </Box>
+            </GlassCard>
+          </Reveal>
+
+          {/* Security */}
+          <Reveal delay={170}>
+            <GlassCard interactive={false} sx={{ p: { xs: 2, sm: 3 } }}>
+              <SectionHeading
+                icon={<ShieldRoundedIcon />}
+                accent={theme.palette.warning.main}
+                title="Security"
+                subtitle="Change the password used to sign in."
+              />
+
+              {isGoogleUser ? (
+                <Alert severity="info" icon={<ShieldRoundedIcon />}>
+                  Your account is authenticated with Google, so password changes are managed
+                  through your Google account.
+                </Alert>
+              ) : (
+                <Box component="form" onSubmit={handlePasswordChange}>
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                      gap: 2,
+                    }}
+                  >
+                    <TextField
+                      label="New password"
+                      type={showPassword ? "text" : "password"}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Enter new password (min 6 chars)"
+                      placeholder="At least 6 characters"
                       required
+                      fullWidth
+                      slotProps={{
+                        input: {
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <LockOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
+                            </InputAdornment>
+                          ),
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton
+                                size="small"
+                                edge="end"
+                                onClick={() => setShowPassword((v) => !v)}
+                                aria-label="Toggle password visibility"
+                              >
+                                {showPassword ? (
+                                  <VisibilityOffRoundedIcon fontSize="small" />
+                                ) : (
+                                  <VisibilityRoundedIcon fontSize="small" />
+                                )}
+                              </IconButton>
+                            </InputAdornment>
+                          ),
+                        },
+                      }}
                     />
-                  </div>
 
-                  <div className="profile-form-group">
-                    <label htmlFor="profile-confirm-pwd">
-                      Confirm Password
-                    </label>
-                    <input
-                      id="profile-confirm-pwd"
-                      type="password"
+                    <TextField
+                      label="Confirm password"
+                      type={showPassword ? "text" : "password"}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm new password"
+                      placeholder="Re-enter new password"
                       required
+                      fullWidth
+                      error={Boolean(confirmPassword) && confirmPassword !== newPassword}
+                      helperText={
+                        confirmPassword && confirmPassword !== newPassword
+                          ? "Passwords do not match"
+                          : " "
+                      }
+                      slotProps={{
+                        input: {
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <LockOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} />
+                            </InputAdornment>
+                          ),
+                        },
+                      }}
                     />
-                  </div>
-                </div>
+                  </Box>
 
-                <button
-                  type="submit"
-                  className="profile-save-btn"
-                  disabled={pwdLoading}
-                >
-                  {pwdLoading ? "Updating Password..." : "Update Password"}
-                </button>
-              </form>
-            )}
+                  <Collapse in={Boolean(pwdStatus.message)}>
+                    <Alert
+                      severity={pwdStatus.type === "success" ? "success" : "error"}
+                      sx={{ mt: 1 }}
+                      onClose={() => setPwdStatus({ type: "", message: "" })}
+                    >
+                      {pwdStatus.message}
+                    </Alert>
+                  </Collapse>
 
-            {pwdStatus.message && (
-              <div className={`profile-status-msg ${pwdStatus.type}`}>
-                {pwdStatus.type === "success" ? (
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                  <PulseButton
+                    type="submit"
+                    disabled={pwdLoading}
+                    gradient={`linear-gradient(135deg, ${theme.palette.warning.main}, ${theme.palette.secondary.main})`}
+                    sx={{ mt: 2, width: { xs: "100%", sm: "auto" }, minWidth: 200 }}
                   >
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                  </svg>
-                ) : (
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                  </svg>
-                )}
-                {pwdStatus.message}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+                    {pwdLoading ? (
+                      <CircularProgress size={20} color="inherit" />
+                    ) : (
+                      "Update password"
+                    )}
+                  </PulseButton>
+                </Box>
+              )}
+            </GlassCard>
+          </Reveal>
+        </Stack>
+      </Box>
+    </Box>
   );
 }
