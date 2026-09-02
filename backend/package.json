@@ -1,10 +1,10 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "main": "server.clean.js",
+  "main": "server.js",
   "scripts": {
-    "dev": "nodemon server.clean.js",
-    "start": "node server.clean.js"
+    "dev": "nodemon server.js",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",

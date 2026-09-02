@@ -15,10 +15,32 @@ try {
 
 dotenv.config({ path: path.join(__dirname, ".env") });
 
-const razorpayInstance = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_TFM4cTiksu0var",
-  key_secret: process.env.RAZORPAY_KEY_SECRET || "Vj4M6xnUqUhvGVZm1tbpQLCN",
-});
+// Payment secrets come exclusively from the environment. No hardcoded fallbacks:
+// a secret committed to source is a secret leaked in git history forever.
+const RAZORPAY_KEY_ID = (process.env.RAZORPAY_KEY_ID || "").trim();
+const RAZORPAY_KEY_SECRET = (process.env.RAZORPAY_KEY_SECRET || "").trim();
+const RAZORPAY_WEBHOOK_SECRET = (process.env.RAZORPAY_WEBHOOK_SECRET || "").trim();
+
+const paymentsEnabled = Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET);
+if (!paymentsEnabled) {
+  console.warn(
+    "[payments] RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET are not set — payment endpoints are disabled until they are configured.",
+  );
+}
+
+const razorpayInstance = paymentsEnabled
+  ? new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET })
+  : null;
+
+// Guard middleware for payment routes when Razorpay is not configured.
+function requirePayments(_req, res, next) {
+  if (!paymentsEnabled) {
+    return res
+      .status(503)
+      .json({ error: "Payments are not configured on this server." });
+  }
+  return next();
+}
 
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
@@ -38,7 +60,28 @@ const CREDIT_PACKAGES = {
 };
 
 app.set("trust proxy", true);
-app.use(cors());
+
+// Restrict cross-origin access to known first-party origins. Requests with no
+// Origin header (server-to-server, curl, Razorpay webhooks) are allowed through;
+// browser requests from any other site are rejected.
+const ALLOWED_ORIGINS = (
+  process.env.ALLOWED_ORIGINS ||
+  "https://leetlens.tech,https://www.leetlens.tech,http://localhost:5173,http://localhost:3000"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Origin not allowed by CORS policy."));
+    },
+  }),
+);
 app.use(express.json());
 
 let firestoreDb = null;
@@ -414,13 +457,24 @@ async function addCreditsForPackage(uid, packageKey, paymentDetails = {}) {
   }
 
   const ref = getUserRef(uid);
-  const txId = paymentDetails.paymentId || `tx_${Date.now()}`;
+  const txId = toDocSafeId(paymentDetails.paymentId || `tx_${Date.now()}`);
   const transRef = ref.collection("transactions").doc(txId);
 
   return firestoreDb.runTransaction(async (txn) => {
+    // Idempotency guard: if this payment has already been credited, do nothing.
+    const existingTxn = await txn.get(transRef);
     const snap = await txn.get(ref);
     const data = snap.data() || {};
     const currentCredits = Number(data.credits || 0);
+
+    if (existingTxn.exists) {
+      return {
+        credits: currentCredits,
+        package: pkg,
+        alreadyProcessed: true,
+      };
+    }
+
     const nextCredits = currentCredits + pkg.credits;
 
     txn.set(
@@ -453,6 +507,7 @@ async function addCreditsForPackage(uid, packageKey, paymentDetails = {}) {
     return {
       credits: nextCredits,
       package: pkg,
+      alreadyProcessed: false,
     };
   });
 }
@@ -1538,41 +1593,14 @@ app.post("/api/resume/match", optionalVerifyFirebaseToken, async (req, res) => {
 });
 
 
-app.post("/api/credits/purchase", verifyFirebaseToken, async (req, res) => {
-  const packageKey = (req.body?.packageKey || "").toString().trim();
-
-  try {
-    await ensureUserDocument(req.authUser, req);
-    const result = await addCreditsForPackage(req.authUser.uid, packageKey);
-
-    const latestSnap = await getUserRef(req.authUser.uid).get();
-    const latestData = latestSnap.data() || {};
-    const user = toPublicUserProfile(
-      req.authUser.uid,
-      latestData,
-      req.authUser,
-    );
-
-    return res.json({
-      credits: result.credits,
-      addedCredits: result.package.credits,
-      amountRs: result.package.priceRs,
-      user,
-    });
-  } catch (error) {
-    const status = error.status || 500;
-    return res.status(status).json({
-      error:
-        status === 400
-          ? "Invalid credits package selected."
-          : "Unable to purchase credits.",
-      details: error.message,
-    });
-  }
-});
+// NOTE: The former POST /api/credits/purchase endpoint was removed. It added
+// credits to the caller's account without any payment or signature check, so
+// any authenticated user could grant themselves unlimited credits for free.
+// Credits are now only ever granted through the verified Razorpay flow below
+// (create-order -> verify-payment) or the signed webhook.
 
 // Razorpay Order Creation Endpoint
-app.post("/api/credits/create-order", verifyFirebaseToken, async (req, res) => {
+app.post("/api/credits/create-order", verifyFirebaseToken, requirePayments, async (req, res) => {
   try {
     const packageKey = (req.body?.packageKey || "").toString().trim();
     const pkg = CREDIT_PACKAGES[packageKey];
@@ -1603,7 +1631,7 @@ app.post("/api/credits/create-order", verifyFirebaseToken, async (req, res) => {
       amount: order.amount,
       currency: order.currency,
       packageKey,
-      key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_TFM4cTiksu0var",
+      key_id: RAZORPAY_KEY_ID,
     });
   } catch (error) {
     console.error("Error creating Razorpay order:", error);
@@ -1614,73 +1642,74 @@ app.post("/api/credits/create-order", verifyFirebaseToken, async (req, res) => {
   }
 });
 
-app.post("/api/create-order", verifyFirebaseToken, async (req, res) => {
-  // Alias for /api/credits/create-order with amount or packageKey fallback
-  try {
-    let packageKey = (req.body?.packageKey || "").toString().trim();
-    if (!packageKey && req.body?.amount) {
-      const amtRs = Math.round(Number(req.body.amount) / 100);
-      if (amtRs <= 10) packageKey = "10_rs9";
-      else if (amtRs <= 20) packageKey = "20_rs19";
-      else packageKey = "50_rs29";
-    }
-    const pkg = CREDIT_PACKAGES[packageKey] || CREDIT_PACKAGES["10_rs9"];
-    const amountInPaise = req.body?.amount ? Number(req.body.amount) : pkg.priceRs * 100;
-
-    if (amountInPaise < 100) {
-      return res.status(400).json({ error: "Amount must be at least 100 paise." });
-    }
-
-    const options = {
-      amount: amountInPaise,
-      currency: "INR",
-      receipt: `rcpt_${req.authUser.uid.slice(0, 8)}_${Date.now()}`,
-    };
-
-    const order = await razorpayInstance.orders.create(options);
-    return res.json({
-      order_id: order.id,
-      amount: order.amount,
-      currency: order.currency,
-      key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_TFM4cTiksu0var",
-    });
-  } catch (error) {
-    return res.status(500).json({ error: "Unable to create Razorpay order.", details: error.message });
-  }
-});
+// NOTE: The former POST /api/create-order alias was removed. It derived the
+// order amount from a client-supplied `amount`, letting a caller create an
+// order for an arbitrary (tiny) amount. All orders now go through
+// /api/credits/create-order, where the amount is fixed by the server-side
+// CREDIT_PACKAGES table.
 
 // Razorpay Payment Signature Verification Endpoint
-app.post("/api/credits/verify-payment", verifyFirebaseToken, async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, packageKey } = req.body || {};
+app.post("/api/credits/verify-payment", verifyFirebaseToken, requirePayments, async (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
 
   if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
     return res.status(400).json({ error: "Missing required Razorpay payment verification fields." });
   }
 
-  const packageKeyStr = (packageKey || "").toString().trim();
-  const pkg = CREDIT_PACKAGES[packageKeyStr];
-  if (!pkg) {
-    return res.status(400).json({ error: "Invalid credits package selected." });
-  }
-
   try {
-    const keySecret = process.env.RAZORPAY_KEY_SECRET || "Vj4M6xnUqUhvGVZm1tbpQLCN";
+    // 1) Verify the checkout signature (proves the order/payment pair is authentic).
     const bodyData = razorpay_order_id + "|" + razorpay_payment_id;
     const generatedSignature = crypto
-      .createHmac("sha256", keySecret)
+      .createHmac("sha256", RAZORPAY_KEY_SECRET)
       .update(bodyData.toString())
       .digest("hex");
 
-    if (generatedSignature !== razorpay_signature) {
+    // Constant-time comparison to avoid signature timing attacks.
+    const sigMatches =
+      generatedSignature.length === (razorpay_signature || "").length &&
+      crypto.timingSafeEqual(
+        Buffer.from(generatedSignature),
+        Buffer.from(razorpay_signature),
+      );
+    if (!sigMatches) {
       return res.status(400).json({ error: "Payment verification failed. Invalid signature." });
     }
 
-    // Signature matches -> credit user account
+    // 2) Fetch the authoritative order + payment from Razorpay. NEVER trust the
+    //    client's claimed packageKey/amount — derive the package from the order
+    //    notes we set server-side at creation time.
+    const order = await razorpayInstance.orders.fetch(razorpay_order_id);
+    const payment = await razorpayInstance.payments.fetch(razorpay_payment_id);
+
+    const orderUid = order?.notes?.uid;
+    const packageKeyStr = (order?.notes?.packageKey || "").toString().trim();
+    const pkg = CREDIT_PACKAGES[packageKeyStr];
+
+    if (!pkg) {
+      return res.status(400).json({ error: "Order is not associated with a valid credits package." });
+    }
+    // The order must belong to the authenticated caller.
+    if (orderUid && orderUid !== req.authUser.uid) {
+      return res.status(403).json({ error: "This payment does not belong to your account." });
+    }
+    // The payment must actually be captured and match the order + expected amount.
+    const expectedPaise = pkg.priceRs * 100;
+    if (
+      payment?.order_id !== razorpay_order_id ||
+      !["captured", "authorized"].includes(payment?.status) ||
+      Number(payment?.amount) !== expectedPaise ||
+      Number(order?.amount) !== expectedPaise
+    ) {
+      return res.status(400).json({ error: "Payment could not be validated against the order." });
+    }
+
+    // 3) Credit the account. addCreditsForPackage is idempotent on paymentId,
+    //    so replaying the same verified payment will not double-credit.
     await ensureUserDocument(req.authUser, req);
     const result = await addCreditsForPackage(req.authUser.uid, packageKeyStr, {
       paymentId: razorpay_payment_id,
       orderId: razorpay_order_id,
-      method: "Razorpay Checkout"
+      method: "Razorpay Checkout",
     });
 
     const latestSnap = await getUserRef(req.authUser.uid).get();
@@ -1689,8 +1718,9 @@ app.post("/api/credits/verify-payment", verifyFirebaseToken, async (req, res) =>
 
     return res.json({
       success: true,
+      alreadyProcessed: result.alreadyProcessed === true,
       credits: result.credits,
-      addedCredits: result.package.credits,
+      addedCredits: result.alreadyProcessed ? 0 : result.package.credits,
       amountRs: result.package.priceRs,
       user,
     });
@@ -1704,19 +1734,28 @@ app.post("/api/credits/verify-payment", verifyFirebaseToken, async (req, res) =>
 });
 
 app.post("/api/razorpay-webhook", async (req, res) => {
-  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "razorpay_secret";
-  const signature = req.headers["x-razorpay-signature"];
+  // The webhook secret must be configured; there is no insecure default.
+  if (!RAZORPAY_WEBHOOK_SECRET) {
+    console.error("[Webhook] RAZORPAY_WEBHOOK_SECRET is not set — rejecting webhook.");
+    return res.status(503).json({ error: "Webhook is not configured." });
+  }
 
+  const signature = req.headers["x-razorpay-signature"];
   if (!signature) {
     return res.status(400).json({ error: "Missing x-razorpay-signature header." });
   }
 
   // Verify signature
-  const shasum = crypto.createHmac("sha256", webhookSecret);
+  const shasum = crypto.createHmac("sha256", RAZORPAY_WEBHOOK_SECRET);
   shasum.update(JSON.stringify(req.body));
   const digest = shasum.digest("hex");
 
-  if (digest !== signature) {
+  const digestBuf = Buffer.from(digest);
+  const sigBuf = Buffer.from(String(signature));
+  if (
+    digestBuf.length !== sigBuf.length ||
+    !crypto.timingSafeEqual(digestBuf, sigBuf)
+  ) {
     return res.status(400).json({ error: "Invalid signature verification." });
   }
 
@@ -1766,27 +1805,9 @@ app.post("/api/razorpay-webhook", async (req, res) => {
   return res.json({ status: "ok" });
 });
 
-app.post("/api/verify-payment", verifyFirebaseToken, async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
-  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-    return res.status(400).json({ error: "Missing required fields." });
-  }
-  try {
-    const keySecret = process.env.RAZORPAY_KEY_SECRET || "Vj4M6xnUqUhvGVZm1tbpQLCN";
-    const bodyData = razorpay_order_id + "|" + razorpay_payment_id;
-    const generatedSignature = crypto
-      .createHmac("sha256", keySecret)
-      .update(bodyData.toString())
-      .digest("hex");
-
-    if (generatedSignature !== razorpay_signature) {
-      return res.status(400).json({ error: "Invalid payment signature." });
-    }
-    return res.json({ success: true, message: "Payment verified successfully." });
-  } catch (error) {
-    return res.status(500).json({ error: "Verification failed.", details: error.message });
-  }
-});
+// NOTE: The former POST /api/verify-payment endpoint was removed. It duplicated
+// signature verification (and carried a hardcoded secret) but granted nothing,
+// so it was dead surface. Use /api/credits/verify-payment instead.
 
 app.get("/api/credits/transactions", verifyFirebaseToken, async (req, res) => {
   try {

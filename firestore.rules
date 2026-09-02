@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// LeetLens Firestore security rules.
+//
+// Design:
+//  - The Express backend uses the Firebase Admin SDK, which BYPASSES these
+//    rules entirely. All privileged writes (granting credits, logging visits,
+//    creating user docs) happen there and are unaffected by anything below.
+//  - The web frontend only ever READS the signed-in user's own profile doc.
+//  - The admin panel reads/writes via the client SDK, so it must run as a user
+//    whose auth token carries a custom claim { admin: true }. Set that claim
+//    with backend/scripts/set-admin-claim.js.
+//  - Everything else is denied by default.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // A user's own profile + all of its subcollections (transactions, searches,
+    // visit_history, resumes, ...). Owners may read their own data; admins may
+    // read everyone's. No client may WRITE here — credits and profile fields are
+    // written exclusively by the trusted backend (Admin SDK). The admin panel
+    // is the one exception, since it manages users directly.
+    match /registered_users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isAdmin();
+
+      match /{subcollection=**} {
+        allow read: if isOwner(uid) || isAdmin();
+        allow write: if isAdmin();
+      }
+    }
+
+    // Analytics / tracking collections contain PII (emails, IPs, resumes) about
+    // many users. These are admin-only from the client; the backend populates
+    // them via the Admin SDK.
+    match /user_searches/{doc=**} {
+      allow read, write: if isAdmin();
+    }
+    match /unregistered_visits/{doc=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // Default deny: any collection not explicitly matched above is inaccessible
+    // to all clients.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
