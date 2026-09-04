@@ -16,6 +16,14 @@
     />
     <meta name="theme-color" content="#ff6a00" />
     <meta name="author" content="LeetLens Team" />
+
+    <!-- Installable PWA / mobile app metadata -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="application-name" content="LeetLens" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="LeetLens" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta
       name="robots"
       content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
@@ -33,7 +41,9 @@
     />
     <meta property="og:url" content="https://leetlens.tech" />
     <meta property="og:image" content="https://leetlens.tech/logo.png" />
+    <meta property="og:image:alt" content="LeetLens — LeetCode profile analyzer and AI interview readiness coach" />
     <meta property="og:site_name" content="LeetLens" />
+    <meta property="og:locale" content="en_US" />
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
@@ -68,9 +78,19 @@
         "@context": "https://schema.org",
         "@type": "WebApplication",
         "name": "LeetLens",
-        "description": "Advanced LeetCode Profile Analyzer and AI DSA Coach with company readiness metrics",
+        "description": "Advanced LeetCode Profile Analyzer and AI DSA Coach with company readiness metrics, resume-to-JD matching, and a personalized preparation roadmap.",
         "url": "https://leetlens.tech",
+        "image": "https://leetlens.tech/logo.png",
         "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Any",
+        "browserRequirements": "Requires a modern web browser with JavaScript enabled",
+        "featureList": [
+          "LeetCode profile analytics (solved counts, streaks, difficulty split, topic coverage)",
+          "AI evaluation report with an overall skill score and company-wise interview readiness",
+          "Resume and job-description ATS matcher",
+          "Personalized 6-month preparation roadmap",
+          "FAANG readiness scoring"
+        ],
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -79,8 +99,9 @@
       }
     </script>
 
-    <!-- Razorpay Standard Checkout SDK -->
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <!-- Razorpay Standard Checkout SDK (deferred: only needed at checkout, so it
+         must not block first paint) -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js" defer></script>
 
     <!-- Google AdSense -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8662840338181469"

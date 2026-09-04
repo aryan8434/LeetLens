@@ -1,0 +1,26 @@
+{
+  "name": "LeetLens - LeetCode Profile Analyzer & AI DSA Coach",
+  "short_name": "LeetLens",
+  "description": "Analyze your LeetCode profile and resume, get FAANG readiness scores, an AI evaluation report, and a personalized preparation roadmap.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#ff6a00",
+  "lang": "en",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "508x425",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
