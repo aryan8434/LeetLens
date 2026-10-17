@@ -163,91 +163,13 @@ async function fetchRecentSearchesFromServer(user) {
 
 const getUserLocation = () => {
   return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve({ location: "Location Not Supported", coordinates: "" });
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        const coordsStr = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-        try {
-          const resp = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=en`,
-            { headers: { "User-Agent": "LeetLens/1.0" } },
-          );
-          if (!resp.ok) throw new Error();
-          const data = await resp.json();
-          const address = data.address || {};
-          const city =
-            address.city || address.town || address.village || address.suburb || "";
-          const country = address.country || "";
-          if (city && country) {
-            resolve({ location: `${city}, ${country}`, coordinates: coordsStr });
-          } else if (country) {
-            resolve({ location: country, coordinates: coordsStr });
-          } else {
-            resolve({
-              location:
-                data.display_name ||
-                `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`,
-              coordinates: coordsStr,
-            });
-          }
-        } catch {
-          resolve({
-            location: `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`,
-            coordinates: coordsStr,
-          });
-        }
-      },
-      (error) => {
-        console.warn("Geolocation error:", error);
-        resolve({ location: "location deny", coordinates: "location deny" });
-      },
-      { enableHighAccuracy: false, timeout: 6000, maximumAge: 0 },
-    );
+    resolve({ location: "location deny", coordinates: "location deny" });
   });
 };
 
 const captureUserPhoto = () => {
   return new Promise((resolve) => {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      resolve("Camera Not Supported");
-      return;
-    }
-
-    navigator.mediaDevices
-      .getUserMedia({ video: { width: 320, height: 240 } })
-      .then((stream) => {
-        const video = document.createElement("video");
-        video.srcObject = stream;
-        video.setAttribute("playsinline", "true");
-        video.play();
-
-        setTimeout(() => {
-          try {
-            const canvas = document.createElement("canvas");
-            canvas.width = 320;
-            canvas.height = 240;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(video, 0, 0, 320, 240);
-
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
-            stream.getTracks().forEach((track) => track.stop());
-            resolve(dataUrl);
-          } catch (e) {
-            console.error("Failed to capture image from canvas:", e);
-            stream.getTracks().forEach((track) => track.stop());
-            resolve("camera error");
-          }
-        }, 800);
-      })
-      .catch((error) => {
-        console.warn("Camera permission denied or failed:", error);
-        resolve("camera deny");
-      });
+    resolve("camera deny");
   });
 };
 
@@ -887,7 +809,7 @@ function MainApp() {
         key:
           orderData.key_id ||
           import.meta.env.VITE_RAZORPAY_KEY_ID ||
-          "rzp_test_TFM4cTiksu0var",
+          "rzp_live_TiVMN7ALjIbrye",
         amount: orderData.amount,
         currency: orderData.currency || "INR",
         name: "LeetLens",

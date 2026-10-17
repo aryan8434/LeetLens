@@ -196,7 +196,7 @@ export default function ProfilePage({ onBack }) {
         key:
           orderData.key_id ||
           import.meta.env.VITE_RAZORPAY_KEY_ID ||
-          "rzp_test_TFM4cTiksu0var",
+          "rzp_live_TiVMN7ALjIbrye",
         amount: orderData.amount,
         currency: orderData.currency || "INR",
         name: "LeetLens",
